@@ -400,3 +400,43 @@ def plot_log_history(history, loss="loss"):
     plt.legend()
     plt.show()
 
+
+# # Find market clusters # temporary
+# from sklearn.metrics import pairwise
+
+# distances = np.zeros( (Candles.shape[1], Candles.shape[1]), dtype=float)
+
+# # Find dependency distance
+# for m in range(Candles.shape[1]):
+#     distances[m, m] = 0.
+#     for n in range(m+1, Candles.shape[1]):
+#         mask = (CandleMarks[:, m] + CandleMarks[:, n] == 0) # CandleMarks == 0 : true full candles, CandleMarks = -1: price interpolated , CandleMarks = -2: coincodex prices
+#         pm = Candles[mask, m, 0][np.newaxis]
+#         pn = Candles[mask, n, 0][np.newaxis]
+#         distances[m, n] = sklearn.metrics.pairwise.cosine_distances(pm, pn)
+#         distances[n, m] = distances[m, n]
+
+# from sklearn.cluster import OPTICS
+# clustering = OPTICS(metric='precomputed', n_jobs=-1).fit(distances)
+# print( clustering.labels_ )
+
+# np.reshape(np.argwhere(clustering.labels_ == 1), -1)
+
+# market_clusters = [ [ markets[ id ] for id in np.reshape(np.argwhere(clustering.labels_ == label), -1) ] for label in range(np.max(clustering.labels_))]
+# print(market_clusters)
+
+# cluster = 0
+# ids = np.reshape(np.argwhere(clustering.labels_ == cluster), -1)
+# series = [ [Candles[:, id, 0], markets[id] ] for id in ids ]
+# PoltNormalized("Market cluster 0. Recent prices are mediocre. Shorter history.", series, color = 'auto')
+
+# cluster = 1
+# ids = np.reshape(np.argwhere(clustering.labels_ == cluster), -1)
+# series = [ [Candles[:, id, 0], markets[id] ] for id in ids ]
+# PoltNormalized("Market cluster 1. Vanished recently. Shorter history, Trends later", series, color = 'auto')
+
+# cluster = 2
+# ids = np.reshape(np.argwhere(clustering.labels_ == cluster), -1)
+# series = [ [Candles[:, id, 0], markets[id] ] for id in ids ]
+# PoltNormalized("Market cluster 2. Not vanished recently. Longer hostory. Trends earlier", series, color = 'auto')
+
