@@ -177,3 +177,226 @@ def intervalToMilliseconds(interval):
         except ValueError:
             pass
     return ms
+
+
+#==================== Define 'Get_eFree' ====================
+
+def Get_eFree(feature, smallSigma, largeSigma, nLatest):
+
+    def gaussian( x, s): return 1./np.sqrt( 2. * np.pi * s**2 ) * np.exp( -x**2 / ( 2. * s**2 ) )
+
+    smallSigma = min(math.floor(feature.shape[0]/3), smallSigma)
+    smallP = 3 * smallSigma
+    smallKernel = np.fromiter( (gaussian( x , smallSigma ) for x in range(-smallP+1, 1, 1 ) ), float ) # smallP points, incl 0.
+#     print("smallKernel: {}".format(smallKernel))
+    maP = np.convolve(feature, smallKernel, mode="valid") / np.sum(smallKernel) # maps to feature[smallP-1:]
+
+    # maP = maP / np.min(1.0, np.min(maP[np.where(maP>0.0)]))
+    nzPs = np.where(maP > 0.0)[0] [smallP:]    # to exclude initial nearly-zero values.
+    log_maP = np.zeros( maP.shape, dtype=maP.dtype)
+    log_maP[nzPs] = np.log2(maP[nzPs])  #------------------------------------------ Log danger ------------
+
+    # log_maP = np.log2(maP + 1e-9) # maps to feature[smallP-1:]
+
+    largeSigma = min(math.floor(feature.shape[0]/3), largeSigma)
+    largeP = 3 * largeSigma
+    largeKernel = np.fromiter( (gaussian( x , largeSigma ) for x in range(-largeP+1, 1, 1 ) ), float ) # largeP points, incl 0.
+#     print("largeKernel: {}".format(largeKernel))
+    event = np.convolve(log_maP, largeKernel, mode="valid") / np.sum(largeKernel) # maps to log_maP[largeP-1:], so to feature[smallP+largeP-2:]
+
+    assert event.shape[0] == feature.shape[0] - (smallP+largeP-2)
+    log_maP1 = log_maP[largeP-1:] # maps to log_maP[largeP-1:], so to feature[smalP+largeP-2:]
+    assert log_maP1.shape[0] == feature.shape[0] - (smallP+largeP-2)
+    P1 = feature[smallP+largeP-2:]
+    assert P1.shape[0] == feature.shape[0] - (smallP+largeP-2)
+    eventFree = log_maP1 - event # maps to feature[smallP+largeP-2:]
+
+    nLatest = min(feature.shape[0] - (smallP+largeP-2), nLatest)
+    P2 = P1[-nLatest:]
+    maP2 = maP[-nLatest:]
+
+    # P2 = P2 / np.min(1.0, np.min(P2[np.where(P2>0.0)]))
+    nzPs = np.where(P2 > 0.0) [0] [:]
+    logP2 = np.zeros( P2.shape, dtype=P2.dtype)
+    logP2[nzPs] = np.log2(P2[nzPs]) #------------------------------------------ Log danger ------------
+
+    # logP2 = np.log2(P2 + 1e-9) 
+    
+    log_maP2 = log_maP1[-nLatest:]
+    event2 = event[-nLatest:]
+    eventFree2 = eventFree[-nLatest:] # maps to candle[p1-1+p2-1+begin: p1-1+p2-1+begine+width]
+
+    return P2, maP2, logP2, log_maP2, event2, eventFree2    # eventFree = log_maP - event, event = convolve(lag_maP, leftKernel) / sum(leftKernel)
+
+
+def Get_eFree_noLog(feature, smallSigma, largeSigma, nLatest):
+
+    def gaussian( x, s): return 1./np.sqrt( 2. * np.pi * s**2 ) * np.exp( -x**2 / ( 2. * s**2 ) )
+
+    smallSigma = min(math.floor(feature.shape[0]/3), smallSigma)
+    smallP = 3 * smallSigma
+    smallKernel = np.fromiter( (gaussian( x , smallSigma ) for x in range(-smallP+1, 1, 1 ) ), float ) # smallP points, incl 0.
+#     print("smallKernel: {}".format(smallKernel))
+    maP = np.convolve(feature, smallKernel, mode="valid") / np.sum(smallKernel) # maps to feature[smallP-1:]
+
+    largeSigma = min(math.floor(feature.shape[0]/3), largeSigma)
+    largeP = 3 * largeSigma
+    largeKernel = np.fromiter( (gaussian( x , largeSigma ) for x in range(-largeP+1, 1, 1 ) ), float ) # largeP points, incl 0.
+#     print("largeKernel: {}".format(largeKernel))
+    event = np.convolve(maP, largeKernel, mode="valid") / np.sum(largeKernel) # maps to maP[largeP-1:], so to feature[smallP+largeP-2:]
+
+    assert event.shape[0] == feature.shape[0] - (smallP+largeP-2)
+    P1 = feature[smallP+largeP-2:]
+    assert P1.shape[0] == feature.shape[0] - (smallP+largeP-2)
+    eventFree = maP[largeP-1:] - event # maps to feature[smallP+largeP-2:]
+
+    nLatest = min(feature.shape[0] - (smallP+largeP-2), nLatest)
+    P2 = P1[-nLatest:]
+    maP2 = maP[-nLatest:]
+   
+    maP2 = maP[-nLatest:]
+    event2 = event[-nLatest:]
+    eventFree2 = eventFree[-nLatest:] # maps to candle[p1-1+p2-1+begin: p1-1+p2-1+begine+width]
+
+    return P2, maP2, P2, maP2, event2, eventFree2    # eventFree = log_maP - event, event = convolve(lag_maP, leftKernel) / sum(leftKernel)
+
+
+import tensorflow as tf
+
+#==================== Define 'divide_to_multiple_csv_files' ====================
+
+def divide_to_multiple_csv_files(data, times, sample_anchors, name_prefix, nx, x_indices, ny, y_indices, header=None, n_parts=10):
+    path_format = "{}_{:02d}.csv"
+
+    filenames = []
+    for file_idx, anchors in enumerate(np.array_split(sample_anchors, n_parts)):
+        part_csv = path_format.format(name_prefix, file_idx)
+        filenames.append(part_csv)
+        with open(part_csv, "wt", encoding="utf-8") as f:
+            if header is not None:
+                f.write(header)
+                f.write("\n")
+            for anchor in anchors:
+                x = np.reshape(data[anchor: anchor + nx][:, x_indices[0]][:, :, x_indices[1]], -1)
+                if times is not None:
+                    x_time = np.reshape(times[anchor: anchor + nx], -1)
+                    x = np.concatenate((x, x_time))
+                f.write(",".join([str(col) for col in x]))
+                y = np.reshape(data[anchor + nx: anchor + nx + ny][:, y_indices[0]][:, :, y_indices[1]], -1)
+                # if times is not None:
+                    # y_time = np.reshape(times[anchor + nx: anchor + nx + ny], -1)
+                    # y = np.concatenate((y, y_time))
+                f.write("," + ",".join([str(col) for col in y]))
+                f.write("\n")
+    return filenames
+
+#==================== Define 'parse_csv_line_to_tensors' ====================
+
+def parse_csv_line_to_tensors(line, nx, size_x, ny, size_y, size_time):
+    defs = [tf.constant(0.0)] * (nx * (size_x + size_time) + ny * size_y)
+    fields = tf.io.decode_csv(line, record_defaults=defs)
+    x = tf.reshape(fields[0: nx * size_x], [nx, -1] )    # sequence of nx tokens, each of size_x
+    x_time = tf.reshape( fields[nx * size_x: nx * (size_x + size_time)], [nx, -1] )
+    x = tf.concat([x, x_time], 1)
+    y = tf.reshape(fields[nx * (size_x + size_time) : nx * (size_x + size_time) + ny * size_y], [-1])
+    # y_time = tf.reshape( fields[ nx * (size_x + size_time) + ny * size_y : nx * (size_x + size_time) + ny * size_y + ny * size_t], [ny, -1]) )
+    # y = tf.concat(y, y_time, 1)
+    return x, y
+
+#==================== Define 'parse_csv_line_to_tensors' ====================
+
+def parse_csv_line_to_tensors_for_transformer(line, nx, size_x, ny, size_y, size_time):
+    defs = [tf.constant(0.0)] * (nx * (size_x + size_time) + ny * size_y)
+    fields = tf.io.decode_csv(line, record_defaults=defs)   # so fields is now a tensor
+    x = tf.reshape(fields[0: nx * size_x], [nx, -1] )    # sequence of nx tokens, each of size_x
+    x_time = tf.reshape( fields[nx * size_x: nx * (size_x + size_time)], [nx, -1] )
+    x = tf.concat([x, x_time], 1)
+    y = tf.reshape(fields[nx * (size_x + size_time) : nx * (size_x + size_time) + ny * size_y], [ny, -1])
+    # y_time = tf.reshape( fields[ nx * (size_x + size_time) + ny * size_y : nx * (size_x + size_time) + ny * size_y + ny * size_t], [ny, -1]) )
+    # y = tf.concat(y, y_time, 1)
+    return x, y
+
+#==================== Define 'csv_reader_to_dataset' ====================
+
+def csv_reader_to_dataset(filenames, nx, size_x, ny, size_y, size_time, n_parse_threads=5, batch_size=32, shuffle_buffer_size=32*128, n_readers=5, transformer=False):
+    dataset = tf.data.Dataset.list_files(filenames)
+    # dataset = dataset.repeat()
+    dataset = dataset.interleave(
+        lambda filename: tf.data.TextLineDataset(filename), #.skip(1), as we have no headers.
+        cycle_length=n_readers)
+    dataset = dataset.shuffle(shuffle_buffer_size)          # Shuffle before batch
+    if transformer:
+        dataset = dataset.map(lambda x: parse_csv_line_to_tensors_for_transformer(x, nx, size_x, ny, size_y, size_time), num_parallel_calls=n_parse_threads)
+    else:
+        dataset = dataset.map(lambda x: parse_csv_line_to_tensors(x, nx, size_x, ny, size_y, size_time), num_parallel_calls=n_parse_threads)
+    dataset = dataset.batch(batch_size, drop_remainder=False)   # Batch the shuffled
+    # dataset = dataset.shuffle(10)          # Shuffle again over batches.
+    return dataset #.prefetch(3)
+
+class MaskedHuber(tf.keras.losses.Loss):
+    # initialize instance attributes
+    def __init__(self, threshold=1):
+        super(MaskedHuber, self).__init__()
+        self.threshold = threshold
+        
+    # Compute loss
+    def call(self, y_true, y_pred):
+        error = y_true - y_pred
+        is_small_error = tf.abs(error) <= self.threshold
+        small_error_loss = tf.square(error) / 2
+        big_error_loss = self.threshold * (tf.abs(error) - self.threshold / 2)
+        loss = tf.where(is_small_error, small_error_loss, big_error_loss)
+        mask = tf.cast(y_true != 0, dtype=y_pred.dtype)   # no need for 0.0
+        masked_loss = tf.multiply(loss, mask, name='masked_loss')
+        return masked_loss
+
+class MaskedMSE(tf.keras.losses.Loss):
+    # https://www.tensorflow.org/api_docs/python/tf/keras/losses/Reduction
+    # initialize instance attributes
+    def __init__(self):
+        super(MaskedMSE, self).__init__()
+        
+    # Compute loss
+    def call(self, y_true, y_pred):
+        mask = tf.cast(y_true != 0, dtype=y_pred.dtype, name='mask')   # no need for 0.0
+        masked_loss = tf.multiply(tf.square(y_true - y_pred), mask, name='masked_loss')
+        rs_masked_loss = tf.reduce_sum(masked_loss, axis=-1, name='rs_masked_lo')    # axis 0 for batch
+        rs_mask = tf.reduce_sum(mask, axis=-1, name='rs_mask')   # axis 0 for batch
+        loss = tf.divide(rs_masked_loss, rs_mask, name='loss')
+        return loss
+
+#==================== Define plot_history ====================
+
+def plot_history(history, loss="loss"):
+    train_losses = history.history[loss]
+    valid_losses = history.history["val_" + loss]
+    n_epochs = len(history.epoch)
+    minloss = min( np.min(valid_losses), np.min(train_losses) )
+    maxloss = max( np.max(valid_losses), np.max(train_losses) )
+    
+    plt.title('History of loss')
+    plt.plot(train_losses, color="b", label="Train")
+    plt.plot(valid_losses, color="r", label="Validation")
+    plt.plot([0, n_epochs], [minloss, minloss], "k--",
+             label="Min val: {:.5f}".format(minloss))
+    plt.axis([0, n_epochs, minloss/1.05, maxloss*1.05])
+    plt.legend()
+    plt.show()
+
+
+def plot_log_history(history, loss="loss"):
+    log_train_losses = np.log(history.history[loss])
+    log_valid_losses = np.log(history.history["val_" + loss])
+    n_epochs = len(history.epoch)
+    minloss = min( np.min(log_valid_losses), np.min(log_train_losses) )
+    maxloss = max( np.max(log_valid_losses), np.max(log_train_losses) )
+    
+    plt.title('History of logarithmic loss')
+    plt.plot(log_train_losses, color="b", label="log.Train")
+    plt.plot(log_valid_losses, color="r", label="log.Validation")
+    plt.plot([0, n_epochs], [minloss, minloss], "k--",
+             label="Min val: {:.5f}".format(minloss))
+    plt.axis([0, n_epochs, minloss/1.05, maxloss*1.05])
+    plt.legend()
+    plt.show()
+
