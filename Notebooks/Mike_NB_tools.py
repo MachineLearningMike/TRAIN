@@ -261,11 +261,18 @@ def Get_eFree_noLog(feature, smallSigma, largeSigma, nLatest):
     return P2, maP2, P2, maP2, event2, eventFree2    # eventFree = log_maP - event, event = convolve(lag_maP, leftKernel) / sum(leftKernel)
 
 
+def get_timepoint_size(indices):
+    size = 1
+    for ids in indices:
+        size *= len(ids)
+    return size
+
+
 import tensorflow as tf
 
 #==================== Define 'divide_to_multiple_csv_files' ====================
 
-def divide_to_multiple_csv_files(data, times, sample_anchors, name_prefix, nx, x_indices, ny, y_indices, header=None, n_parts=10):
+def divide_to_multiple_csv_files(data, time_x, time_y, times, sample_anchors, name_prefix, nx, x_indices, ny, y_indices, header=None, n_parts=10):
     path_format = "{}_{:02d}.csv"
 
     filenames = []
@@ -278,47 +285,57 @@ def divide_to_multiple_csv_files(data, times, sample_anchors, name_prefix, nx, x
                 f.write("\n")
             for anchor in anchors:
                 x = np.reshape(data[anchor: anchor + nx][:, x_indices[0]][:, :, x_indices[1]], -1)
-                if times is not None:
+                if time_x is True:
+                    assert times is not None
                     x_time = np.reshape(times[anchor: anchor + nx], -1)
                     x = np.concatenate((x, x_time))
                 f.write(",".join([str(col) for col in x]))
                 y = np.reshape(data[anchor + nx: anchor + nx + ny][:, y_indices[0]][:, :, y_indices[1]], -1)
-                # if times is not None:
-                    # y_time = np.reshape(times[anchor + nx: anchor + nx + ny], -1)
-                    # y = np.concatenate((y, y_time))
+                if time_y is True:
+                    assert times is not None
+                    y_time = np.reshape(times[anchor + nx: anchor + nx + ny], -1)
+                    y = np.concatenate((y, y_time))
                 f.write("," + ",".join([str(col) for col in y]))
                 f.write("\n")
     return filenames
 
 #==================== Define 'parse_csv_line_to_tensors' ====================
 
-def parse_csv_line_to_tensors(line, nx, size_x, ny, size_y, size_time):
-    defs = [tf.constant(0.0)] * (nx * (size_x + size_time) + ny * size_y)
+def parse_csv_line_to_tensors(line, nx, size_x, ny, size_y, time_x, time_y, size_time):
+    span_x = nx * (size_x + (size_time if time_x else 0))
+    span_y = ny * (size_y + (size_time if time_y else 0))
+    defs = [tf.constant(0.0)] * (span_x + span_y)
     fields = tf.io.decode_csv(line, record_defaults=defs)
-    x = tf.reshape(fields[0: nx * size_x], [nx, -1] )    # sequence of nx tokens, each of size_x
-    x_time = tf.reshape( fields[nx * size_x: nx * (size_x + size_time)], [nx, -1] )
-    x = tf.concat([x, x_time], 1)
-    y = tf.reshape(fields[nx * (size_x + size_time) : nx * (size_x + size_time) + ny * size_y], [-1])
-    # y_time = tf.reshape( fields[ nx * (size_x + size_time) + ny * size_y : nx * (size_x + size_time) + ny * size_y + ny * size_t], [ny, -1]) )
-    # y = tf.concat(y, y_time, 1)
+    x = tf.reshape(fields[0: nx * size_x], [nx, -1])    # sequence of nx tokens, each of size_x
+    if time_x:
+        x_time = tf.reshape(fields[nx * size_x: span_x], [nx, -1])
+        x = tf.concat([x, x_time], 1)
+    y = tf.reshape(fields[span_x : span_x + ny * size_y], [-1])
+    if time_y:
+        y_time = tf.reshape(fields[span_x + ny * size_y : span_x + span_y], [-1])
+        y = tf.concat([y, y_time], 0)
     return x, y
 
 #==================== Define 'parse_csv_line_to_tensors' ====================
 
-def parse_csv_line_to_tensors_for_transformer(line, nx, size_x, ny, size_y, size_time):
-    defs = [tf.constant(0.0)] * (nx * (size_x + size_time) + ny * size_y)
-    fields = tf.io.decode_csv(line, record_defaults=defs)   # so fields is now a tensor
-    x = tf.reshape(fields[0: nx * size_x], [nx, -1] )    # sequence of nx tokens, each of size_x
-    x_time = tf.reshape( fields[nx * size_x: nx * (size_x + size_time)], [nx, -1] )
-    x = tf.concat([x, x_time], 1)
-    y = tf.reshape(fields[nx * (size_x + size_time) : nx * (size_x + size_time) + ny * size_y], [ny, -1])
-    # y_time = tf.reshape( fields[ nx * (size_x + size_time) + ny * size_y : nx * (size_x + size_time) + ny * size_y + ny * size_t], [ny, -1]) )
-    # y = tf.concat(y, y_time, 1)
+def parse_csv_line_to_tensors_for_transformer(line, nx, size_x, ny, size_y, time_x, time_y, size_time):
+    span_x = nx * (size_x + (size_time if time_x else 0))
+    span_y = ny * (size_y + (size_time if time_y else 0))
+    defs = [tf.constant(0.0)] * (span_x + span_y)
+    fields = tf.io.decode_csv(line, record_defaults=defs)
+    x = tf.reshape(fields[0: nx * size_x], [nx, -1])    # sequence of nx tokens, each of size_x
+    if time_x:
+        x_time = tf.reshape(fields[nx * size_x: span_x], [nx, -1])
+        x = tf.concat([x, x_time], 1)
+    y = tf.reshape(fields[span_x : span_x + ny * size_y], [ny, -1])
+    if time_y:
+        y_time = tf.reshape(fields[span_x + ny * size_y : span_x + span_y], [ny, -1])
+        y = tf.concat([y, y_time], 1)
     return x, y
 
 #==================== Define 'csv_reader_to_dataset' ====================
 
-def csv_reader_to_dataset(filenames, nx, size_x, ny, size_y, size_time, n_parse_threads=5, batch_size=32, shuffle_buffer_size=32*128, n_readers=5, transformer=False):
+def csv_reader_to_dataset(filenames, nx, size_x, ny, size_y, time_x, time_y, size_time, n_parse_threads=5, batch_size=32, shuffle_buffer_size=32*128, n_readers=5, transformer=False):
     dataset = tf.data.Dataset.list_files(filenames)
     # dataset = dataset.repeat()
     dataset = dataset.interleave(
@@ -326,9 +343,9 @@ def csv_reader_to_dataset(filenames, nx, size_x, ny, size_y, size_time, n_parse_
         cycle_length=n_readers)
     dataset = dataset.shuffle(shuffle_buffer_size)          # Shuffle before batch
     if transformer:
-        dataset = dataset.map(lambda x: parse_csv_line_to_tensors_for_transformer(x, nx, size_x, ny, size_y, size_time), num_parallel_calls=n_parse_threads)
+        dataset = dataset.map(lambda x: parse_csv_line_to_tensors_for_transformer(x, nx, size_x, ny, size_y, time_x, time_y, size_time), num_parallel_calls=n_parse_threads)
     else:
-        dataset = dataset.map(lambda x: parse_csv_line_to_tensors(x, nx, size_x, ny, size_y, size_time), num_parallel_calls=n_parse_threads)
+        dataset = dataset.map(lambda x: parse_csv_line_to_tensors(x, nx, size_x, ny, size_y, time_x, time_y, size_time), num_parallel_calls=n_parse_threads)
     dataset = dataset.batch(batch_size, drop_remainder=False)   # Batch the shuffled
     # dataset = dataset.shuffle(10)          # Shuffle again over batches.
     return dataset #.prefetch(3)
