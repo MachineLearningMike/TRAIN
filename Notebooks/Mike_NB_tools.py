@@ -261,6 +261,23 @@ def Get_eFree_noLog(feature, smallSigma, largeSigma, nLatest):
     return P2, maP2, P2, maP2, event2, eventFree2    # eventFree = log_maP - event, event = convolve(lag_maP, leftKernel) / sum(leftKernel)
 
 
+#==================== Define 'get_eFree_with_plot' ====================
+
+def get_eFree_with_plot(market, field, feature, smallSigma, largeSigma, nLatest, noPlot = True, noLog = False):
+    if noLog:
+        P, maP, _, _, event, eventFree = Get_eFree_noLog(feature, smallSigma, largeSigma, nLatest)
+        series = [ [maP, "maP", "g"], [event, "event", "c"],  [eventFree, "e.Free", "brown"] ] #, [P, "raw feature", "r"] ]
+        if not noPlot:
+            PoltNormalized("Event-free (brown) {} on {}".format(field, market), series)
+        return P, maP, _, _, event, eventFree
+    else:
+        P, maP, logP, log_maP, event, eventFree = Get_eFree(feature, smallSigma, largeSigma, nLatest)
+        series = [ [maP, "maP", "g"], [logP, "logP" ,"m"], [log_maP, "log.maP", "b"], [event, "event", "c"],  [eventFree, "e.Free", "brown"] ] #, [P, "raw feature", "r"] ]
+        if not noPlot:
+            PoltNormalized("Event-free (brown) {} on {}".format(field, market), series)
+        return P, maP, logP, log_maP, event, eventFree
+
+
 def get_timepoint_size(indices):
     size = 1
     for ids in indices:
@@ -331,7 +348,15 @@ def parse_csv_line_to_tensors_for_transformer(line, nx, size_x, ny, size_y, time
     if time_y:
         y_time = tf.reshape(fields[span_x + ny * size_y : span_x + span_y], [ny, -1])
         y = tf.concat([y, y_time], 1)
-    return x, y
+
+    x = tf.pad(x, [[1,1], [0,0]])   # Start, End
+    y = tf.pad(y, [[1,1], [0,0]])   # Start, End
+
+    if x.shape[-1] % 2 != 0:
+        x = tf.pad(x, [[0,0], [0,1]])
+        y = tf.pad(y, [[0,0], [0,1]])
+
+    return (x, y[:-1]), y[1:]
 
 #==================== Define 'csv_reader_to_dataset' ====================
 
@@ -370,8 +395,8 @@ class MaskedHuber(tf.keras.losses.Loss):
 class MaskedMSE(tf.keras.losses.Loss):
     # https://www.tensorflow.org/api_docs/python/tf/keras/losses/Reduction
     # initialize instance attributes
-    def __init__(self):
-        super(MaskedMSE, self).__init__()
+    def __init__(self, **kwargs):
+        super(MaskedMSE, self).__init__(kwargs)
         
     # Compute loss
     def call(self, y_true, y_pred):
