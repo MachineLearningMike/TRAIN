@@ -225,7 +225,6 @@ class ConDecoder(tf.keras.layers.Layer):
       dropout_rate=dropout_rate
     )
     self.dropout = tf.keras.layers.Dropout(dropout_rate)
-
     self.dec_layers = [
         DecoderLayer(d_model=d_model, num_heads=num_heads,
                      dff=dff, dropout_rate=dropout_rate)
@@ -263,7 +262,6 @@ class ConTransformer(tf.keras.Model):
   def call(self, inputs):
     # To use a Keras model with `.fit` you must pass all your inputs in the
     # first argument.
-
     context, x  = inputs
     
     # content = tf.keras.layers.LayerNormalization()(context)
