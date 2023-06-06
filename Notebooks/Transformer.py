@@ -208,9 +208,7 @@ class DecoderLayer(tf.keras.layers.Layer):
     self.last_attn_scores = self.cross_attention.last_attn_scores
 
     x = self.ffn(x)  # Shape `(batch_size, seq_len, d_model)`.
-    return x
-  
-
+    return x 
 
 class ConDecoder(tf.keras.layers.Layer):
   def __init__(self, *, num_layers, d_model, num_heads, dff,
@@ -247,9 +245,7 @@ class ConDecoder(tf.keras.layers.Layer):
     self.last_attn_scores = self.dec_layers[-1].last_attn_scores
 
     # The shape of x is (batch_size, target_seq_len, d_model).
-    return x
-  
-
+    return x 
 class ConTransformer(tf.keras.Model):
   def __init__(self, *, num_layers, d_model, num_heads, dff,
                repComplexity, target_dim, dropout_rate=0.1):
@@ -348,17 +344,6 @@ def masked_accuracy(label, pred):
   match = tf.cast(match, dtype=tf.float32)
   mask = tf.cast(mask, dtype=tf.float32)
   return tf.reduce_sum(match)/tf.reduce_sum(mask)
-
-
-# transformer.compile(
-#     loss=masked_loss,
-#     optimizer=optimizer,
-#     metrics=[masked_accuracy])
-
-
-# transformer.fit(train_batches,
-#                 epochs=20,
-#                 validation_data=val_batches)
 
 
 # class Translator(tf.Module):
