@@ -48,8 +48,6 @@ class PositionalEmbedding(tf.keras.layers.Layer):
   def __init__(self, vocab_size, d_model):
     super().__init__()
     self.d_model = d_model
-    self.embedding = tf.keras.layers.Embedding(vocab_size, d_model, mask_zero=True) 
-    self.pos_encoding = positional_encoding(length=2048, depth=d_model)
 
   def compute_mask(self, *args, **kwargs):
     return self.embedding.compute_mask(*args, **kwargs)
@@ -107,23 +105,6 @@ class CausalSelfAttention(BaseAttention):
         use_causal_mask = True)
     x = self.add([x, attn_output])
     x = self.layernorm(x)
-    return x
-  
-
-class FeedForward(tf.keras.layers.Layer):
-  def __init__(self, d_model, dff, dropout_rate=0.1):
-    super().__init__()
-    self.seq = tf.keras.Sequential([
-      tf.keras.layers.Dense(dff, activation='relu'),
-      tf.keras.layers.Dense(d_model),
-      tf.keras.layers.Dropout(dropout_rate)
-    ])
-    self.add = tf.keras.layers.Add()
-    self.layer_norm = tf.keras.layers.LayerNormalization()
-
-  def call(self, x):
-    x = self.add([x, self.seq(x)])
-    x = self.layer_norm(x) 
     return x
   
 
