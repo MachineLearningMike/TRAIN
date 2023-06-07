@@ -375,13 +375,7 @@ def csv_reader_to_dataset(filenames, nx, size_x, ny, size_y, time_x, time_y, siz
     # dataset = dataset.shuffle(10)          # Shuffle again over batches.
     return dataset #.prefetch(3)
 
-class MaskedHuber(tf.keras.losses.Loss):
-    # initialize instance attributes
-    def __init__(self, threshold=1):
-        super(MaskedHuber, self).__init__()
-        self.threshold = threshold
         
-    # Compute loss
     def call(self, y_true, y_pred):
         error = y_true - y_pred
         is_small_error = tf.abs(error) <= self.threshold
@@ -398,7 +392,6 @@ class MaskedMSE(tf.keras.losses.Loss):
     def __init__(self, **kwargs):
         super(MaskedMSE, self).__init__(kwargs)
         
-    # Compute loss
     def call(self, y_true, y_pred):
         mask = tf.cast(y_true != 0, dtype=y_pred.dtype, name='mask')   # no need for 0.0
         masked_loss = tf.multiply(tf.square(y_true - y_pred), mask, name='masked_loss')
