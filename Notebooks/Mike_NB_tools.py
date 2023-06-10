@@ -393,8 +393,8 @@ def MaskedHuber_Core(y_true, y_pred, threshold=1.0):
 
 
 class MaskedHuber(tf.keras.losses.Loss):
-    def __init__(self, threshold=1.0):
-        super(MaskedHuber, self).__init__(reduction=tf.keras.losses.Reduction.AUTO)
+    def __init__(self, name='mHuber', threshold=1.0):
+        super(MaskedHuber, self).__init__(reduction=tf.keras.losses.Reduction.AUTO, name=name)
         self.threshold = threshold
         
     def call(self, y_true, y_pred):
@@ -403,7 +403,7 @@ class MaskedHuber(tf.keras.losses.Loss):
 
 
 class MaskedHuber_Metric(tf.keras.metrics.Metric):
-    def __init__(self, name='MMSE', **kwargs):
+    def __init__(self, name='mHuber', **kwargs):
         super().__init__(name=name, **kwargs)
         self.num_updates_seen = self.add_weight(name='num', initializer='zeros')
         self.avg_across_updates = self.add_weight(name='metric', initializer='zeros')
@@ -435,7 +435,7 @@ def MaskedMSE_Core(y_true, y_pred):
 
 
 class MaskedMSE(tf.keras.losses.Loss):
-    def __init__(self, name='MaskedMSE'):
+    def __init__(self, name='mMSE'):
         super().__init__(reduction=tf.keras.losses.Reduction.AUTO, name=name)
         
     def call(self, y_true, y_pred):
@@ -443,7 +443,7 @@ class MaskedMSE(tf.keras.losses.Loss):
 
 
 class MaskedMSE_Metric(tf.keras.metrics.Metric):
-    def __init__(self, name='MMSE', **kwargs):
+    def __init__(self, name='mMSE', **kwargs):
         super().__init__(name=name, **kwargs)
         self.num_updates_seen = self.add_weight(name='num', initializer='zeros')
         self.avg_across_updates = self.add_weight(name='metric', initializer='zeros')
@@ -481,8 +481,8 @@ def MaskedTrendError_Core(y_true, y_pred):
 
 
 class MaskedTrendError(tf.keras.losses.Loss):
-    def __init__(self):
-        super().__init__(reduction=tf.keras.losses.Reduction.AUTO)
+    def __init__(self, name='mTE'):
+        super().__init__(reduction=tf.keras.losses.Reduction.AUTO, name=name)
         
     def call(self, y_true, y_pred):
         loss = MaskedTrendError_Core(y_true, y_pred) # (batch, sequence-1)
@@ -490,7 +490,7 @@ class MaskedTrendError(tf.keras.losses.Loss):
 
 
 class MaskedTrendError_Metric(tf.keras.metrics.Metric):
-    def __init__(self, name='MTE', **kwargs):
+    def __init__(self, name='mTE', **kwargs):
         super().__init__(name=name, **kwargs)
         self.num_updates_seen = self.add_weight(name='num', initializer='zeros')
         self.avg_across_updates = self.add_weight(name='metric', initializer='zeros')
@@ -510,7 +510,7 @@ class MaskedTrendError_Metric(tf.keras.metrics.Metric):
 
 
 class MaskedTrendAccuracy_Metric(tf.keras.metrics.Metric):
-    def __init__(self, name='MTA', **kwargs):
+    def __init__(self, name='mTA', **kwargs):
         super().__init__(name=name, **kwargs)
         self.accMatch = self.add_weight(name='accMatch', initializer='zeros')
         self.accTotal = self.add_weight(name='accTotal', initializer='zeros')
