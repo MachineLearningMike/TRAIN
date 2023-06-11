@@ -377,7 +377,7 @@ def csv_reader_to_dataset(filenames, nx, size_x, ny, size_y, time_x, time_y, siz
 
 #========================================= MaskedHuber
 
-def MaskedHuber_Core(y_true, y_pred, threshold=1.0):
+def MaskedHuber_Core(y_true, y_pred, sample_weight=None, threshold=1.0):
     # y_true, y_pred: (batch, sequence, depth)
     error = y_true - y_pred
     is_small_error = tf.abs(error) <= threshold
@@ -388,17 +388,21 @@ def MaskedHuber_Core(y_true, y_pred, threshold=1.0):
     masked_loss = tf.multiply(raw_loss, mask, name='masked_loss')
     rs_masked_loss = tf.reduce_sum(masked_loss, axis=-1, name='rs_masked_loss') # depth axis is reduced
     rs_mask = tf.reduce_sum(mask, axis=-1, name='rs_mask')  # depth axis is reduced
-    loss = tf.divide(rs_masked_loss, rs_mask, name='loss')
+    loss = tf.divide(rs_masked_loss, rs_mask + 1e-9, name='loss')
+    if sample_weight is not None:
+        sample_weight = tf.cast(sample_weight, y_pred.dtype)
+        sample_weight = tf.broadcast_to(sample_weight, loss.shape)
+        loss = tf.multiply(loss, sample_weight)
     return loss
 
 
 class MaskedHuber(tf.keras.losses.Loss):
-    def __init__(self, name='mHuber', threshold=1.0):
-        super(MaskedHuber, self).__init__(reduction=tf.keras.losses.Reduction.AUTO, name=name)
+    def __init__(self, name='mHuber', threshold=1.0, **kwargs):
+        super(MaskedHuber, self).__init__(reduction=tf.keras.losses.Reduction.AUTO, name=name, **kwargs)
         self.threshold = threshold
         
-    def call(self, y_true, y_pred):
-        loss = MaskedHuber_Core(y_true, y_pred)
+    def call(self, y_true, y_pred, sample_weight=None):
+        loss = MaskedHuber_Core(y_true, y_pred, sample_weight)
         return loss
 
 
@@ -408,8 +412,8 @@ class MaskedHuber_Metric(tf.keras.metrics.Metric):
         self.num_updates_seen = self.add_weight(name='num', initializer='zeros')
         self.avg_across_updates = self.add_weight(name='metric', initializer='zeros')
 
-    def update_state(self, y_true, y_pred):
-        loss = MaskedHuber_Core(y_true, y_pred)
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        loss = loss = MaskedHuber_Core(y_true, y_pred, sample_weight=sample_weight)
         loss = tf.reduce_mean(loss, axis=None)
         self.num_updates_seen.assign_add(tf.constant(1, dtype=self.dtype))
         self.avg_across_updates.assign_add( (loss - self.avg_across_updates) / self.num_updates_seen )
@@ -417,29 +421,34 @@ class MaskedHuber_Metric(tf.keras.metrics.Metric):
     def result(self):
         return self.avg_across_updates
     
-    def reset_states(self):
+    def reset_state(self):
         self.num_updates_seen.assign(0.)
         self.avg_across_updates.assign(0.)
 
 #========================================= MaskedMSE
 
-def MaskedMSE_Core(y_true, y_pred):
+def MaskedMSE_Core(y_true, y_pred, sample_weight=None):
         # y_true, y_pred: (batch, sequence, depth)
         raw_loss = tf.square(y_true - y_pred)
         mask = tf.cast(y_true != 0, dtype=y_pred.dtype, name='mask')   # no need for 0.0
         masked_loss = tf.multiply(raw_loss, mask, name='masked_loss')
         rs_masked_loss = tf.reduce_sum(masked_loss, axis=-1, name='rs_masked_loss')  # depth axis is reduced
         rs_mask = tf.reduce_sum(mask, axis=-1, name='rs_mask')  # depth axis is reduced
-        loss = tf.divide(rs_masked_loss, rs_mask, name='loss')
+        loss = tf.divide(rs_masked_loss, rs_mask + 1e-9, name='loss')
+        if sample_weight is not None:
+            sample_weight = tf.cast(sample_weight, y_pred.dtype)
+            sample_weight = tf.broadcast_to(sample_weight, loss.shape)
+            loss = tf.multiply(loss, sample_weight)
         return loss
 
 
 class MaskedMSE(tf.keras.losses.Loss):
-    def __init__(self, name='mMSE'):
-        super().__init__(reduction=tf.keras.losses.Reduction.AUTO, name=name)
+    def __init__(self, name='mMSE', **kwargs):
+        super().__init__(reduction=tf.keras.losses.Reduction.AUTO, name=name, **kwargs)
         
-    def call(self, y_true, y_pred):
-        return MaskedMSE_Core(y_true, y_pred)
+    def call(self, y_true, y_pred, sample_weight=None):
+        loss = MaskedMSE_Core(y_true, y_pred, sample_weight=sample_weight)
+        return loss
 
 
 class MaskedMSE_Metric(tf.keras.metrics.Metric):
@@ -448,8 +457,8 @@ class MaskedMSE_Metric(tf.keras.metrics.Metric):
         self.num_updates_seen = self.add_weight(name='num', initializer='zeros')
         self.avg_across_updates = self.add_weight(name='metric', initializer='zeros')
 
-    def update_state(self, y_true, y_pred):
-        loss = MaskedMSE_Core(y_true, y_pred)
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        loss = MaskedMSE_Core(y_true, y_pred, sample_weight=sample_weight)
         loss = tf.reduce_mean(loss, axis=None)
         self.num_updates_seen.assign_add(tf.constant(1, dtype=self.dtype))
         self.avg_across_updates.assign_add( (loss - self.avg_across_updates) / self.num_updates_seen )
@@ -457,13 +466,13 @@ class MaskedMSE_Metric(tf.keras.metrics.Metric):
     def result(self):
         return self.avg_across_updates
     
-    def reset_states(self):
+    def reset_state(self):
         self.num_updates_seen.assign(0.)
         self.avg_across_updates.assign(0.)
 
 #========================================= MaskedTrendError
 
-def MaskedTrendError_Core(y_true, y_pred):
+def MaskedTrendError_Core(y_true, y_pred, sample_weight=None):
     # y_true, y_pred: (batch, sequence, depth)
     d_true = (y_true[:, 1:] - y_true[:, :-1])
     d_true = d_true / tf.expand_dims(tf.norm(d_true, ord='euclidean', axis=-1) + 1e-30, axis=-1)
@@ -476,16 +485,20 @@ def MaskedTrendError_Core(y_true, y_pred):
     masked_loss = tf.multiply(raw_loss, mask, name='masked_loss')
     rs_masked_loss = tf.reduce_sum(masked_loss, axis=-1, name='rs_masked_loss')  # depth axis is reduced
     rs_mask = tf.reduce_sum(mask, axis=-1, name='rs_mask')   # depth axis is reduced
-    loss = tf.divide(rs_masked_loss, rs_mask + 1e-30, name='loss')  # (batch, sequence-1)
+    loss = tf.divide(rs_masked_loss, rs_mask + 1e-9, name='loss')  # (batch, sequence-1)
+    if sample_weight is not None:
+        sample_weight = tf.cast(sample_weight, y_pred.dtype)
+        sample_weight = tf.broadcast_to(sample_weight, loss.shape)
+        loss = tf.multiply(loss, sample_weight)
     return loss
 
 
 class MaskedTrendError(tf.keras.losses.Loss):
-    def __init__(self, name='mTE'):
-        super().__init__(reduction=tf.keras.losses.Reduction.AUTO, name=name)
+    def __init__(self, name='mTE', **kwargs):
+        super().__init__(reduction=tf.keras.losses.Reduction.AUTO, name=name, **kwargs)
         
-    def call(self, y_true, y_pred):
-        loss = MaskedTrendError_Core(y_true, y_pred) # (batch, sequence-1)
+    def call(self, y_true, y_pred, sample_weight=None):
+        loss = MaskedTrendError_Core(y_true, y_pred, sample_weight=sample_weight) # (batch, sequence-1)
         return loss
 
 
@@ -495,8 +508,8 @@ class MaskedTrendError_Metric(tf.keras.metrics.Metric):
         self.num_updates_seen = self.add_weight(name='num', initializer='zeros')
         self.avg_across_updates = self.add_weight(name='metric', initializer='zeros')
 
-    def update_state(self, y_true, y_pred):
-        loss = MaskedTrendError_Core(y_true, y_pred)
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        loss = MaskedTrendError_Core(y_true, y_pred, sample_weight=sample_weight)
         loss = tf.reduce_mean(loss, axis=None)
         self.num_updates_seen.assign_add(1.)
         self.avg_across_updates.assign_add( (loss - self.avg_across_updates) / self.num_updates_seen )
@@ -504,7 +517,7 @@ class MaskedTrendError_Metric(tf.keras.metrics.Metric):
     def result(self):
         return self.avg_across_updates
     
-    def reset_states(self):
+    def reset_state(self):
         self.num_updates_seen.assign(0.)
         self.avg_across_updates.assign(0.)
 
@@ -515,18 +528,22 @@ class MaskedTrendAccuracy_Metric(tf.keras.metrics.Metric):
         self.accMatch = self.add_weight(name='accMatch', initializer='zeros')
         self.accTotal = self.add_weight(name='accTotal', initializer='zeros')
 
-    def update_state(self, y_true, y_pred):
+    def update_state(self, y_true, y_pred, sample_weight=None):
         mask =  tf.cast(y_true != 0, dtype=y_pred.dtype)   # no need for 0.0
         mask = tf.multiply(mask[:, 1:], mask[:, :-1], name='mask')
         codir = (y_true[:, 1:] - y_true[:, :-1]) * (y_pred[:, 1:] - y_pred[:, :-1])
         masked_codir = tf.cast(tf.greater(codir, 0.0), self.dtype) * mask
+        if sample_weight is not None:
+            sample_weight = tf.cast(sample_weight, y_pred.dtype)
+            sample_weight = tf.broadcast_to(sample_weight, masked_codir.shape)
+            masked_codir = tf.multiply(masked_codir, sample_weight)
         self.accMatch.assign_add(tf.reduce_sum(masked_codir, axis=None))
         self.accTotal.assign_add(tf.reduce_sum(mask, axis=None))
 
     def result(self):
         return self.accMatch / (self.accTotal + 1e-30)
     
-    def reset_states(self):
+    def reset_state(self):
         self.accMatch.assign(0.)
         self.accTotal.assign(0.)
 
@@ -566,6 +583,15 @@ def plot_log_history(history, loss="loss"):
     plt.legend()
     plt.show()
 
+
+import pandas as pd
+def plot_csv_log_history(file_path, columns):
+    data = pd.read_csv(file_path)
+    for col_name in columns:
+        if col_name == 'epoch': continue
+        plt.plot(range(len(data[col_name])), data[col_name], label=col_name)
+    plt.legend(loc='lower left')
+    plt.show()
 
 # # Find market clusters # temporary
 # from sklearn.metrics import pairwise
