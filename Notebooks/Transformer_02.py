@@ -247,7 +247,7 @@ class ConDecoder(tf.keras.layers.Layer):
     return x 
 class ConTransformer(tf.keras.layers.Layer):
   def __init__(self, *, num_layers, d_model, num_heads, dff,
-               repComplexity, target_dim, dropout_rate=0.1, name='trans'):
+               repComplexity, dropout_rate=0.1, name='trans'):
     super().__init__(name=name)
     self.encoder = ConEncoder(num_layers=num_layers, d_model=d_model,
                            num_heads=num_heads, dff=dff, repComplexity=repComplexity,
@@ -257,7 +257,7 @@ class ConTransformer(tf.keras.layers.Layer):
                            num_heads=num_heads, dff=dff, repComplexity=repComplexity,
                            dropout_rate=dropout_rate)
 
-    self.final_layer = tf.keras.layers.Dense(target_dim)  # TEMP
+    self.final_layer = tf.keras.layers.Dense(d_model)
 
 
   def call(self, inputs):
