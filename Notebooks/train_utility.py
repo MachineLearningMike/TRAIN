@@ -700,7 +700,6 @@ class MaskedTrendError(tf.keras.losses.Loss):
     def __init__(self, name='mTE', **kwargs):
         super().__init__(reduction=tf.keras.losses.Reduction.AUTO, name=name, **kwargs)
         
-    @tf.autograph.experimental.do_not_convert
     def call(self, y_true, y_pred, sample_weight=None):
         loss = MaskedTrendError_Core(y_true, y_pred, sample_weight=sample_weight) # (batch, sequence-1)
         return loss
@@ -712,18 +711,15 @@ class MaskedTrendError_Metric(tf.keras.metrics.Metric):
         self.num_updates_seen = self.add_weight(name='num', initializer='zeros')
         self.avg_across_updates = self.add_weight(name='metric', initializer='zeros')
 
-    @tf.autograph.experimental.do_not_convert
     def update_state(self, y_true, y_pred, sample_weight=None):
         loss = MaskedTrendError_Core(y_true, y_pred, sample_weight=sample_weight)
         loss = tf.reduce_mean(loss, axis=None)
         self.num_updates_seen.assign_add(1.)
         self.avg_across_updates.assign_add( (loss - self.avg_across_updates) / self.num_updates_seen )
 
-    @tf.autograph.experimental.do_not_convert
     def result(self):
         return self.avg_across_updates
     
-    @tf.autograph.experimental.do_not_convert
     def reset_state(self):
         self.num_updates_seen.assign(0.)
         self.avg_across_updates.assign(0.)
@@ -735,7 +731,6 @@ class MaskedTrendAccuracy_Metric(tf.keras.metrics.Metric):
         self.accMatch = self.add_weight(name='accMatch', initializer='zeros')
         self.accTotal = self.add_weight(name='accTotal', initializer='zeros')
 
-    @tf.autograph.experimental.do_not_convert
     def update_state(self, y_true, y_pred, sample_weight=None):
         mask =  tf.cast(y_true != 0, dtype=y_pred.dtype)   # no need for 0.0
         mask = tf.multiply(mask[:, 1:], mask[:, :-1], name='mask')
@@ -748,11 +743,9 @@ class MaskedTrendAccuracy_Metric(tf.keras.metrics.Metric):
         self.accMatch.assign_add(tf.reduce_sum(masked_codir, axis=None))
         self.accTotal.assign_add(tf.reduce_sum(mask, axis=None))
 
-    @tf.autograph.experimental.do_not_convert
     def result(self):
         return self.accMatch / (self.accTotal + 1e-30)
     
-    @tf.autograph.experimental.do_not_convert
     def reset_state(self):
         self.accMatch.assign(0.)
         self.accTotal.assign(0.)
