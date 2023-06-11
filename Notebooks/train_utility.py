@@ -1,12 +1,15 @@
 # Import 3rd-party frameworks.
 
-from scipy import signal
-import matplotlib.pyplot as plt
-import numpy as np
-import time as tm
+import os
 import math
+import time as tm
+import tensorflow as tf
+from tensorflow import keras  # tf.keras
+import numpy as np
 from datetime import datetime, timedelta
-from matplotlib import pyplot as plt
+from sklearn.model_selection import train_test_split
+# from matplotlib import pyplot as plt
+import matplotlib.pyplot as plt
 
 
 def ShowSingle(title, series):
@@ -179,6 +182,14 @@ def intervalToMilliseconds(interval):
     return ms
 
 
+def get_timestamps(CandleFile, Candles):
+    start = datetime( 2000+int(CandleFile[0:2]), int(CandleFile[3:5]), int(CandleFile[6:8]), int(CandleFile[9:11]), int(CandleFile[12:14]) )
+    start_ts = round(datetime.timestamp(start))
+    interval = CandleFile[ CandleFile.find('-', len(CandleFile) - 4) + 1 : ]
+    interval_s = round(intervalToMilliseconds(interval) / 1000)
+    timestamps_abs = np.array( range(start_ts, start_ts + Candles.shape[0] * interval_s, interval_s), dtype=int)
+    assert timestamps_abs.shape[0] == Candles.shape[0]
+    return start_ts, interval_s, timestamps_abs
 
 
 #==================== Define 'Get_eFree' ====================
@@ -287,7 +298,82 @@ def get_timepoint_size(indices):
     return size
 
 
-import tensorflow as tf
+def get_formation_params(
+        enFields, markets, marketrank,
+        min_true_candle_percent_x, chosen_fields_x_names, min_true_candle_percent_y, chosen_fields_y_names
+    ):
+    chosen_markets_x = [ elem[0] for elem in marketrank if elem[1] >= min_true_candle_percent_x ]
+    chosen_markets_x = tuple([ markets.index(elem) for elem in chosen_markets_x ])
+    chosen_markets_x = tuple(list(set(chosen_markets_x)))
+
+    chosen_fields_x = tuple( [ enFields.index(elem) for elem in chosen_fields_x_names ] )
+    chosen_fields_x = tuple(list(set(chosen_fields_x)))
+    x_indices = ( chosen_markets_x, chosen_fields_x )
+    print(x_indices)
+
+    chosen_markets_y = [ elem[0] for elem in marketrank if elem[1] >= min_true_candle_percent_y ]
+    chosen_markets_y = tuple([ markets.index(elem) for elem in chosen_markets_y ])
+    chosen_markets_y = tuple(list(set(chosen_markets_y)))
+
+    chosen_fields_y = tuple( [ enFields.index(elem) for elem in chosen_fields_y_names ] )
+    chosen_fields_y = tuple(list(set(chosen_fields_y)))
+    y_indices = ( chosen_markets_y, chosen_fields_y )
+    print(y_indices)
+
+    size_x = get_timepoint_size(x_indices)
+    size_y = get_timepoint_size(y_indices)
+    print(size_x, size_y)
+
+    chosen_markets = tuple(list(set(chosen_markets_x + chosen_markets_y)))
+    chosen_fields = tuple(list(set(chosen_fields_x + chosen_fields_y)))
+    print(chosen_markets, chosen_fields)
+
+    print(len(chosen_markets), len(chosen_fields))
+
+    return x_indices, y_indices, chosen_markets, chosen_fields
+
+
+def get_time_features(timestamps_abs):
+    sigma = np.power(2.0, -0.2)
+    hourly = np.sin( 2 * np.pi / (60*60) * timestamps_abs ) / sigma
+    daily = np.sin( 2 * np.pi / (60*60*24) * timestamps_abs ) / sigma
+    weekly = np.sin( 2 * np.pi / (60*60*24*7) * timestamps_abs ) / sigma
+    yearly = np.sin( 2 * np.pi / (60*60*24*365) * timestamps_abs ) / sigma
+    tenyearly = np.sin( 2 * np.pi / (60*60*24*365*10) * timestamps_abs ) / sigma    # Let the model absorb non-cyclic time features.
+    Time = np.stack([hourly, daily, weekly, yearly], axis=1)
+    return Time
+
+
+def standardize(Data, chosen_markets, chosen_fields):
+    Standard = []
+
+    for market in chosen_markets:
+        for field in chosen_fields:
+            nzPs = np.where( Data[:, market, field] != 0.0 ) [0]
+            mu = np.average(Data[nzPs, market, field])
+            sigma = np.std(Data[nzPs, market, field])
+            standard = (Data[nzPs, market, field] - mu) / (sigma + 1e-15)
+            Standard.append( (market, field, mu, sigma) )
+            Data[nzPs, market, field] = standard
+    Standard = np.array(Standard)
+    return Data, Standard
+
+
+def get_sample_anchores(Data, Nx, Ny, Ns):
+    sample_anchors = np.array(range(0, Data.shape[0] - Nx - Ny + 1, Ns))
+    # print(Data.shape[0], len(sample_anchors), sample_anchors, sample_anchors[-1])
+    # print(Data.shape[0], sample_anchors[ -1 ], sample_anchors[ -1 ] + Nx + Ny, sample_anchors[ -1 ] + Ns, sample_anchors[ -1 ] + Ns + Nx + Ny)
+
+    for _ in range(100):
+        permute = np.random.permutation(sample_anchors.shape[0])
+        sample_anchors = sample_anchors[permute]
+
+    sample_anchores_t, sample_anchores_v = train_test_split(sample_anchors, test_size=0.30, random_state=42)
+
+    sample_anchores_t = tuple(sample_anchores_t)
+    sample_anchores_v = tuple(sample_anchores_v)
+
+    return sample_anchores_t, sample_anchores_v
 
 #==================== Define 'divide_to_multiple_csv_files' ====================
 
@@ -377,6 +463,121 @@ def csv_reader_to_dataset(filenames, nx, size_x, ny, size_y, time_x, time_y, siz
     # dataset = dataset.shuffle(10)          # Shuffle again over batches.
     return dataset #.prefetch(3)
 
+
+def get_datasets(
+    Reuse_files,
+    CandleFile, dir_datasets, Data, Time_into_X, Time_into_Y, Time, 
+    sample_anchores_t, sample_anchores_v,
+    Nx, x_indices, Ny, y_indices, nFiles_t, nFiles_v, n_readers, size_time,
+    BatchSize, shuffle_batch, Transformer, nPrefetch
+       
+):
+    name_plus_t = CandleFile+'_t'
+    name_plus_v = CandleFile+'_v'
+    name_prefix_t = os.path.join(dir_datasets, name_plus_t)
+    name_prefix_v = os.path.join(dir_datasets, name_plus_v)
+
+    reuse_files = Reuse_files #------------------------------------------------------------------------------------------------------- 
+
+    if reuse_files:
+        import re
+        filenames_train = [ os.path.join(dir_datasets, x) for x in os.listdir(dir_datasets) if re.match(name_plus_t, x)]
+        filenames_valid = [ os.path.join(dir_datasets, x) for x in os.listdir(dir_datasets) if re.match(name_plus_v, x)]
+    else:
+        os.system("rm {}/*{}*".format(dir_datasets, name_plus_t))
+        os.system("rm {}/*{}*".format(dir_datasets, name_plus_v))
+        filenames_train = divide_to_multiple_csv_files(Data, Time_into_X, Time_into_Y, Time, sample_anchores_t, name_prefix_t, Nx, x_indices, Ny, y_indices, header=None, n_parts=nFiles_t)
+        filenames_valid = divide_to_multiple_csv_files(Data, Time_into_X, Time_into_Y, Time, sample_anchores_v, name_prefix_v, Nx, x_indices, Ny, y_indices, header=None, n_parts=nFiles_v)
+
+    size_x = get_timepoint_size(x_indices)
+    size_y = get_timepoint_size(y_indices)
+
+    # sample_anchores are already shuffled. But we need to shuffle datasets again, because it will reshuffle at every epoch.
+    Dataset_train = csv_reader_to_dataset(filenames_train, Nx, size_x, Ny, size_y, Time_into_X, Time_into_Y, size_time,
+                                n_parse_threads=5, batch_size=BatchSize, shuffle_buffer_size=BatchSize*shuffle_batch, n_readers=n_readers, transformer=Transformer)
+    Dataset_train = Dataset_train.prefetch(nPrefetch)
+
+    Dataset_valid = csv_reader_to_dataset(filenames_valid, Nx, size_x, Ny, size_y, Time_into_X, Time_into_Y, size_time,
+                                n_parse_threads=5, batch_size=BatchSize, shuffle_buffer_size=BatchSize*shuffle_batch, n_readers=n_readers, transformer=Transformer)
+    Dataset_valid = Dataset_valid.prefetch(nPrefetch)
+
+    dx = size_x + (size_time if Time_into_X else 0)
+    if Transformer: dx = dx + dx % 2
+    dy = size_y + (size_time if Time_into_Y else 0)
+    if Transformer: dy = dy + dy % 2
+    if Transformer: assert dx == dy
+
+    return Dataset_train, Dataset_valid, dx, dy
+
+
+def build_model(dx, dy, cryptoformer, HuberThreshold, CancleLossWeight, TrendLossWeight):
+    assert dx == dy
+    candle_input_x = keras.Input( shape=( (None, dx) ), name='candle_input_x' )
+    candle_input_y = keras.Input( shape=( (None, dx) ), name='candle_input_y' )
+    candle_input_shifted_y = keras.Input( shape=( (None, dx) ), name='candle_input_shifted_y' )
+
+    cryptoformer_input = (candle_input_x, candle_input_y)
+    cryptoformer_output = cryptoformer(cryptoformer_input)
+
+    model = keras.Model(
+        inputs = [cryptoformer_input],
+        outputs = { "value": cryptoformer_output, "trend": cryptoformer_output }
+    )
+
+    model.compile(
+        optimizer=keras.optimizers.Adam(
+            learning_rate=0.001,  # def lr = 0.001
+            beta_1=0.9,
+            beta_2=0.999, 
+            epsilon=1e-07
+        ),
+        loss={
+            "value": MaskedHuber(threshold=HuberThreshold),
+            "trend": MaskedTrendError() 
+        },
+        loss_weights={ 
+            "value": CancleLossWeight, 
+            "trend": TrendLossWeight 
+        },
+        metrics={ 
+            "value": [MaskedHuber_Metric()], 
+            "trend": [MaskedTrendError_Metric(), MaskedTrendAccuracy_Metric()]
+        }
+    )
+
+    return model
+
+
+def get_callbacks(
+    checkpoint_filepath, Checkpoint_Monitor, 
+    csvLogger_filepath, 
+    EarlyStopping_Min_Monitor, EarlyStopping_Patience
+):
+    callbacks = []
+    model_checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
+        filepath=checkpoint_filepath,
+        save_weights_only=True,
+        monitor=Checkpoint_Monitor,
+        mode='min',
+        save_best_only=True,
+        save_freq='epoch',
+        # initial_value_threshold=0.5,
+    )
+    callbacks.append(model_checkpoint_callback)
+
+    history_logger=tf.keras.callbacks.CSVLogger(csvLogger_filepath, separator=",", append=True)
+    callbacks.append(history_logger)
+
+    early_stopping_callback = tf.keras.callbacks.EarlyStopping(
+        monitor=EarlyStopping_Min_Monitor,
+        patience=EarlyStopping_Patience,
+        mode='min',
+        restore_best_weights=True
+    )
+    callbacks.append(early_stopping_callback)
+
+    return callbacks
+
 #========================================= MaskedHuber
 
 def MaskedHuber_Core(y_true, y_pred, sample_weight=None, threshold=1.0):
@@ -447,7 +648,7 @@ def MaskedMSE_Core(y_true, y_pred, sample_weight=None):
 class MaskedMSE(tf.keras.losses.Loss):
     def __init__(self, name='mMSE', **kwargs):
         super().__init__(reduction=tf.keras.losses.Reduction.AUTO, name=name, **kwargs)
-        
+
     def call(self, y_true, y_pred, sample_weight=None):
         loss = MaskedMSE_Core(y_true, y_pred, sample_weight=sample_weight)
         return loss
@@ -499,6 +700,7 @@ class MaskedTrendError(tf.keras.losses.Loss):
     def __init__(self, name='mTE', **kwargs):
         super().__init__(reduction=tf.keras.losses.Reduction.AUTO, name=name, **kwargs)
         
+    @tf.autograph.experimental.do_not_convert
     def call(self, y_true, y_pred, sample_weight=None):
         loss = MaskedTrendError_Core(y_true, y_pred, sample_weight=sample_weight) # (batch, sequence-1)
         return loss
@@ -510,15 +712,18 @@ class MaskedTrendError_Metric(tf.keras.metrics.Metric):
         self.num_updates_seen = self.add_weight(name='num', initializer='zeros')
         self.avg_across_updates = self.add_weight(name='metric', initializer='zeros')
 
+    @tf.autograph.experimental.do_not_convert
     def update_state(self, y_true, y_pred, sample_weight=None):
         loss = MaskedTrendError_Core(y_true, y_pred, sample_weight=sample_weight)
         loss = tf.reduce_mean(loss, axis=None)
         self.num_updates_seen.assign_add(1.)
         self.avg_across_updates.assign_add( (loss - self.avg_across_updates) / self.num_updates_seen )
 
+    @tf.autograph.experimental.do_not_convert
     def result(self):
         return self.avg_across_updates
     
+    @tf.autograph.experimental.do_not_convert
     def reset_state(self):
         self.num_updates_seen.assign(0.)
         self.avg_across_updates.assign(0.)
@@ -530,6 +735,7 @@ class MaskedTrendAccuracy_Metric(tf.keras.metrics.Metric):
         self.accMatch = self.add_weight(name='accMatch', initializer='zeros')
         self.accTotal = self.add_weight(name='accTotal', initializer='zeros')
 
+    @tf.autograph.experimental.do_not_convert
     def update_state(self, y_true, y_pred, sample_weight=None):
         mask =  tf.cast(y_true != 0, dtype=y_pred.dtype)   # no need for 0.0
         mask = tf.multiply(mask[:, 1:], mask[:, :-1], name='mask')
@@ -542,9 +748,11 @@ class MaskedTrendAccuracy_Metric(tf.keras.metrics.Metric):
         self.accMatch.assign_add(tf.reduce_sum(masked_codir, axis=None))
         self.accTotal.assign_add(tf.reduce_sum(mask, axis=None))
 
+    @tf.autograph.experimental.do_not_convert
     def result(self):
         return self.accMatch / (self.accTotal + 1e-30)
     
+    @tf.autograph.experimental.do_not_convert
     def reset_state(self):
         self.accMatch.assign(0.)
         self.accTotal.assign(0.)
