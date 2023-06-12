@@ -1,11 +1,11 @@
 import os
 import tensorflow as tf
 
-nnArchitecture = 56 #---------------------------------------
+nnArchitecture = 0 #---------------------------------------
 
-Nx = 600 # ------------- test
+Nx = 60 # ------------- test
 Ny = 5
-Ns = 5 #--------------------- test
+Ns = 5000 #--------------------- test
 BatchSize = 64
 
 CandleFile = "18-01-01-00-00-23-05-20-20-23-5m"
@@ -23,10 +23,10 @@ dir_data = "/mnt/data/Trading/"
 dir_datasets = os.path.join(dir_data, "Datasets", "model_{}".format(nnArchitecture))
 dir_candles = os.path.join(dir_data, "Candles")
 
-min_true_candle_percent_x = 40
+min_true_candle_percent_x = 90
 chosen_markets_x = []
 chosen_fields_x_names = ['ClosePrice'] #, 'BaseVolume']
-min_true_candle_percent_y = 40
+min_true_candle_percent_y = 90
 assert min_true_candle_percent_x == min_true_candle_percent_y
 chosen_markets_y = []
 chosen_fields_y_names = ['ClosePrice']
@@ -41,22 +41,20 @@ eFreeNoPlot = True
 
 Epochs_Initial = 5000
 
-Num_Layers = 8 # Wow
+Num_Layers = 10 # Wow
 Num_Heads = 1   # As we have a single GPU, and we want to a exhaustic attention.
 Factor_FF = 4
-repComplexity = 8  # Wower
+repComplexity = 16  # Wower
 Dropout_Rate = 0.1
 
 HuberThreshold = 1.0
 CancleLossWeight = 1.0
-TrendLossWeight = 50.0
+TrendLossWeight = 30.0
 
 dir_Checkpoint = os.path.join(dir_data, "Checkpoints")
 checkpoint_filepath = os.path.join(dir_Checkpoint, "model_{}".format(nnArchitecture))
 dir_CSVLogs = os.path.join(dir_data, "CSVLogs")
 csvLogger_filepath = os.path.join(dir_CSVLogs, "model_{}".format(nnArchitecture))
-Checkpoint_Monitor = "val_loss"
-EarlyStopping_Min_Monitor = "val_loss"
+Checkpoint_Monitor = "val_trans_1_mHuber"
+EarlyStopping_Min_Monitor = "val_trans_1_mHuber"
 EarlyStopping_Patience = 20
-
-Learning_Rate = 0.005

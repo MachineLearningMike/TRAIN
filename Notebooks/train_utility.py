@@ -11,6 +11,7 @@ from sklearn.model_selection import train_test_split
 # from matplotlib import pyplot as plt
 import matplotlib.pyplot as plt
 
+from trans import *
 
 def ShowSingle(title, series):
     fig = plt.figure(figsize=(16,3))
@@ -437,14 +438,16 @@ def parse_csv_line_to_tensors_for_transformer(line, nx, size_x, ny, size_y, time
         y_time = tf.reshape(fields[span_x + ny * size_y : span_x + span_y], [ny, -1])
         y = tf.concat([y, y_time], 1)
 
-    x = tf.pad(x, [[1,1], [0,0]])   # Start, End
-    y = tf.pad(y, [[1,1], [0,0]])   # Start, End
+    x = tf.pad(x, [[1,1], [0,0]], constant_values=0)   # (1 pre-pad: Start, 1 post-pad: End) on axis 0. (0 pre-pad, 0 post-pad) on axis 1.
+    y = tf.pad(y, [[1,1], [0,0]], constant_values=0)
 
     if x.shape[-1] % 2 != 0:
-        x = tf.pad(x, [[0,0], [0,1]])
-        y = tf.pad(y, [[0,0], [0,1]])
+        x = tf.pad(x, [[0,0], [0,1]], constant_values=0) # (0 pre-pad: Start, 0 post-pad: End) on axis 0. (0 pre-pad, 1 post-pad) on axis 1.
+        y = tf.pad(y, [[0,0], [0,1]], constant_values=0)
 
     return (x, y[:-1]), y[1:]
+    # so M(x, [y[0]]) -> y[1], M(x, [y[0], y[1]]) -> y[2], ..., M(x, [y[0], ..., y[-2]]) -> y[-1]
+    # where y[0] = Start, y[-1] = End.
 
 #==================== Define 'csv_reader_to_dataset' ====================
 
@@ -510,8 +513,29 @@ def get_datasets(
     return Dataset_train, Dataset_valid, dx, dy
 
 
-def build_model(dx, dy, cryptoformer, HuberThreshold, CancleLossWeight, TrendLossWeight):
+
+
+    candle_input_x = keras.Input( shape=( (None, dx) ), name='candle_input_x' )
+    candle_input_y = keras.Input( shape=( (None, dx) ), name='candle_input_y' )
+    candle_input_shifted_y = keras.Input( shape=( (None, dx) ), name='candle_input_shifted_y' )
+
+    cryptoformer_input = (candle_input_x, candle_input_y)
+    cryptoformer_output = cryptoformer(cryptoformer_input)
+
+
+
+def build_model(
+    dx, dy, Num_Layers, Num_Heads, Factor_FF, repComplexity, Dropout_Rate,
+    HuberThreshold, CancleLossWeight, TrendLossWeight
+    ):
+
     assert dx == dy
+
+    cryptoformer = ConTransformer(
+        num_layers=Num_Layers, d_model=dx, num_heads=Num_Heads, dff=Factor_FF*dx, 
+        repComplexity=repComplexity, dropout_rate=Dropout_Rate
+    )
+
     candle_input_x = keras.Input( shape=( (None, dx) ), name='candle_input_x' )
     candle_input_y = keras.Input( shape=( (None, dx) ), name='candle_input_y' )
     candle_input_shifted_y = keras.Input( shape=( (None, dx) ), name='candle_input_shifted_y' )
@@ -524,12 +548,14 @@ def build_model(dx, dy, cryptoformer, HuberThreshold, CancleLossWeight, TrendLos
         outputs = { "value": cryptoformer_output, "trend": cryptoformer_output }
     )
 
+    learning_rate = CustomSchedule(dx)
+
     model.compile(
-        optimizer=keras.optimizers.Adam(
-            learning_rate=0.001,  # def lr = 0.001
-            beta_1=0.9,
-            beta_2=0.999, 
-            epsilon=1e-07
+        optimizer=tf.keras.optimizers.Adam(
+            0.005, # learning_rate, # default is 0.001
+            beta_1=0.9, 
+            beta_2=0.98, 
+            epsilon=1e-9
         ),
         loss={
             "value": MaskedHuber(threshold=HuberThreshold),
@@ -543,6 +569,46 @@ def build_model(dx, dy, cryptoformer, HuberThreshold, CancleLossWeight, TrendLos
             "value": [MaskedHuber_Metric()], 
             "trend": [MaskedTrendError_Metric(), MaskedTrendAccuracy_Metric()]
         }
+    )
+
+    return model
+
+
+def build_model_2(
+    dx, dy, Num_Layers, Num_Heads, Factor_FF, repComplexity, Dropout_Rate,
+    HuberThreshold, CancleLossWeight, TrendLossWeight, Learning_Rate
+    ):
+
+    assert dx == dy
+
+    cryptoformer = ConTransformer(
+        num_layers=Num_Layers, d_model=dx, num_heads=Num_Heads, dff=Factor_FF*dx, 
+        repComplexity=repComplexity, dropout_rate=Dropout_Rate
+    )
+
+    candle_input_x = keras.Input( shape=( (None, dx) ), name='candle_input_x' )
+    candle_input_y = keras.Input( shape=( (None, dx) ), name='candle_input_y' )
+    candle_input_shifted_y = keras.Input( shape=( (None, dx) ), name='candle_input_shifted_y' )
+
+    cryptoformer_input = (candle_input_x, candle_input_y)
+    cryptoformer_output = cryptoformer(cryptoformer_input)
+
+    model = keras.Model(
+        inputs = [cryptoformer_input],
+        outputs = [cryptoformer_output]
+    )
+
+    learning_rate = CustomSchedule(dx)
+
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(
+            Learning_Rate, # learning_rate, # default is 0.001. 
+            beta_1=0.9, 
+            beta_2=0.98, 
+            epsilon=1e-9
+        ),
+        loss=[MaskedHuber(threshold=HuberThreshold)],
+        metrics=[MaskedTrendAccuracy_Metric()]
     )
 
     return model
@@ -619,7 +685,7 @@ class MaskedHuber_Metric(tf.keras.metrics.Metric):
         loss = loss = MaskedHuber_Core(y_true, y_pred, sample_weight=sample_weight)
         loss = tf.reduce_mean(loss, axis=None)
         self.num_updates_seen.assign_add(tf.constant(1, dtype=self.dtype))
-        self.avg_across_updates.assign_add( (loss - self.avg_across_updates) / self.num_updates_seen )
+        self.avg_across_updates.assign_add( (loss - self.avg_across_updates) / (self.num_updates_seen + 1e-9) )
 
     def result(self):
         return self.avg_across_updates
@@ -664,7 +730,7 @@ class MaskedMSE_Metric(tf.keras.metrics.Metric):
         loss = MaskedMSE_Core(y_true, y_pred, sample_weight=sample_weight)
         loss = tf.reduce_mean(loss, axis=None)
         self.num_updates_seen.assign_add(tf.constant(1, dtype=self.dtype))
-        self.avg_across_updates.assign_add( (loss - self.avg_across_updates) / self.num_updates_seen )
+        self.avg_across_updates.assign_add( (loss - self.avg_across_updates) / (self.num_updates_seen + 1e-9) )
 
     def result(self):
         return self.avg_across_updates
@@ -677,12 +743,12 @@ class MaskedMSE_Metric(tf.keras.metrics.Metric):
 
 def MaskedTrendError_Core(y_true, y_pred, sample_weight=None):
     # y_true, y_pred: (batch, sequence, depth)
-    d_true = (y_true[:, 1:] - y_true[:, :-1])
+    d_true = (y_true[:, 1:, :] - y_true[:, :-1, :])
     d_true = d_true / tf.expand_dims(tf.norm(d_true, ord='euclidean', axis=-1) + 1e-30, axis=-1)
-    d_pred = (y_pred[:, 1:] - y_pred[:, :-1])
+    d_pred = (y_pred[:, 1:, :] - y_pred[:, :-1, :])
     d_pred = d_pred / tf.expand_dims(tf.norm(d_pred, ord='euclidean', axis=-1) + 1e-30, axis=-1)
     mask =  tf.cast(y_true != 0, dtype=y_pred.dtype)   # no need for 0.0
-    mask = tf.multiply(mask[:, 1:], mask[:, :-1], name='mask')
+    mask = tf.multiply(mask[:, 1:, :], mask[:, :-1, :], name='mask')
     raw_loss = - d_true * d_pred    # What's better?
     raw_loss = tf.nn.relu(raw_loss)
     masked_loss = tf.multiply(raw_loss, mask, name='masked_loss')
@@ -715,7 +781,7 @@ class MaskedTrendError_Metric(tf.keras.metrics.Metric):
         loss = MaskedTrendError_Core(y_true, y_pred, sample_weight=sample_weight)
         loss = tf.reduce_mean(loss, axis=None)
         self.num_updates_seen.assign_add(1.)
-        self.avg_across_updates.assign_add( (loss - self.avg_across_updates) / self.num_updates_seen )
+        self.avg_across_updates.assign_add( (loss - self.avg_across_updates) / (self.num_updates_seen + 1e-9) )
 
     def result(self):
         return self.avg_across_updates
@@ -733,9 +799,9 @@ class MaskedTrendAccuracy_Metric(tf.keras.metrics.Metric):
 
     def update_state(self, y_true, y_pred, sample_weight=None):
         mask =  tf.cast(y_true != 0, dtype=y_pred.dtype)   # no need for 0.0
-        mask = tf.multiply(mask[:, 1:], mask[:, :-1], name='mask')
-        codir = (y_true[:, 1:] - y_true[:, :-1]) * (y_pred[:, 1:] - y_pred[:, :-1])
-        masked_codir = tf.cast(tf.greater(codir, 0.0), self.dtype) * mask
+        mask = tf.multiply(mask[:, 1:, :], mask[:, :-1, :], name='mask')
+        codir = (y_true[:, 1:, :] - y_true[:, :-1, :]) * (y_pred[:, 1:, :] - y_pred[:, :-1, :])
+        masked_codir = tf.cast(tf.greater(codir, 0.0), y_pred.dtype) * mask
         if sample_weight is not None:
             sample_weight = tf.cast(sample_weight, y_pred.dtype)
             sample_weight = tf.broadcast_to(sample_weight, masked_codir.shape)

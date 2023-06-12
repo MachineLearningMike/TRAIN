@@ -29,8 +29,8 @@ class FeedForward(tf.keras.layers.Layer):
   def __init__(self, d_model, dff, dropout_rate=0.1):
     super().__init__()
     self.seq = tf.keras.Sequential([
-      tf.keras.layers.Dense(dff, activation='relu'),
-      tf.keras.layers.Dense(d_model),
+      tf.keras.layers.Dense(dff, activation="selu", kernel_initializer="lecun_normal"),
+      tf.keras.layers.Dense(d_model, activation="selu", kernel_initializer="lecun_normal"),
       tf.keras.layers.Dropout(dropout_rate)
     ])
     self.add = tf.keras.layers.Add()
@@ -71,11 +71,12 @@ class ConPositionalEmbedding(tf.keras.layers.Layer):
   # def compute_mask(self, *args, **kwargs):
   #   return self.embedding.compute_mask(*args, **kwargs)
 
+
   def call(self, x):
     length = tf.shape(x)[1]
     x = self.representation(x)
-    # # This factor sets the relative scale of the representation and positonal_encoding.
-    # x *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))
+    # This factor sets the relative scale of the representation and positonal_encoding.
+    x *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))
     x = x + self.pos_encoding[tf.newaxis, :length, :]
     return x
 
