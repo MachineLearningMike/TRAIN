@@ -285,23 +285,6 @@ class ConTransformer(tf.keras.layers.Layer):
     return logits
   
 
-num_layers = 4
-d_model = 128
-dff = 512
-num_heads = 8
-dropout_rate = 0.1
-
-
-# transformer = Transformer(
-#     num_layers=num_layers,
-#     d_model=d_model,
-#     num_heads=num_heads,
-#     dff=dff,
-#     input_vocab_size=tokenizers.pt.get_vocab_size().numpy(),
-#     target_vocab_size=tokenizers.en.get_vocab_size().numpy(),
-#     dropout_rate=dropout_rate)
-
-
 class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
   def __init__(self, d_model, warmup_steps=4000):
     super().__init__()
@@ -318,31 +301,6 @@ class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
 
     return tf.math.rsqrt(self.d_model) * tf.math.minimum(arg1, arg2)
   
-def masked_loss(label, pred):
-  mask = label != 0
-  loss_object = tf.keras.losses.SparseCategoricalCrossentropy(
-    from_logits=True, reduction='none')
-  loss = loss_object(label, pred)
-
-  mask = tf.cast(mask, dtype=loss.dtype)
-  loss *= mask
-
-  loss = tf.reduce_sum(loss)/tf.reduce_sum(mask)
-  return loss
-
-
-def masked_accuracy(label, pred):
-  pred = tf.argmax(pred, axis=2)
-  label = tf.cast(label, pred.dtype)
-  match = label == pred
-
-  mask = label != 0
-
-  match = match & mask
-
-  match = tf.cast(match, dtype=tf.float32)
-  mask = tf.cast(mask, dtype=tf.float32)
-  return tf.reduce_sum(match)/tf.reduce_sum(mask)
 
 
 # class Translator(tf.Module):
