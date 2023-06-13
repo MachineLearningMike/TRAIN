@@ -1,7 +1,11 @@
 import os
 import tensorflow as tf
 
-nnArchitecture = 57 #---------------------------------------
+dir_data = "/mnt/data/Trading/"
+
+#===================================================================== Dataset
+dataset_id = 57
+Dataset_Id = dataset_id
 
 Nx = 600 # ------------- test
 Ny = 5
@@ -16,11 +20,10 @@ eFreeNoLog = True
 nFiles_t = 10
 nFiles_v = 10
 n_readers = 10
-shuffle_batch = 50  # Keep it small to speed up model loading. Sample_anchores already do static shuffling.
+shuffle_batch = 50  # Keep it small to speed up model loading.
 nPrefetch = tf.data.AUTOTUNE
 
-dir_data = "/mnt/data/Trading/"
-dir_datasets = os.path.join(dir_data, "Datasets", "model_{}".format(nnArchitecture))
+dir_datasets = os.path.join(dir_data, "Datasets", "model_{}".format(Dataset_Id))
 dir_candles = os.path.join(dir_data, "Candles")
 
 min_true_candle_percent_x = 40
@@ -34,12 +37,14 @@ chosen_fields_y_names = ['ClosePrice']
 Standardization = True
 Kill_Irregulars = True  # ----------------- pls implement it
 Time_into_X = True
-Time_into_Y = True
+Time_into_Y = False #
 Transformer = True
 Reuse_files = True
 eFreeNoPlot = True
 
-Epochs_Initial = 5000
+#======================================================================== Model
+model_id = 1
+Model_Id = 100 * Dataset_Id + model_id
 
 Num_Layers = 8 # Wow
 Num_Heads = 1   # As we have a single GPU, and we want to a exhaustic attention.
@@ -47,14 +52,21 @@ Factor_FF = 4
 repComplexity = 8  # Wower
 Dropout_Rate = 0.1
 
+dir_Checkpoint = os.path.join(dir_data, "Checkpoints")
+checkpoint_filepath = os.path.join(dir_Checkpoint, "model_{}".format(Model_Id))
+dir_CSVLogs = os.path.join(dir_data, "CSVLogs")
+csvLogger_filepath = os.path.join(dir_CSVLogs, "model_{}".format(Model_Id))
+
+#======================================================================== Train
+train_id = 1
+Train_Id = 100 * Model_Id + train_id
+
+Epochs_Initial = 5000
+
 HuberThreshold = 1.0
 CancleLossWeight = 1.0
 TrendLossWeight = 50.0
 
-dir_Checkpoint = os.path.join(dir_data, "Checkpoints")
-checkpoint_filepath = os.path.join(dir_Checkpoint, "model_{}".format(nnArchitecture))
-dir_CSVLogs = os.path.join(dir_data, "CSVLogs")
-csvLogger_filepath = os.path.join(dir_CSVLogs, "model_{}".format(nnArchitecture))
 Checkpoint_Monitor = "val_loss"
 EarlyStopping_Min_Monitor = "val_loss"
 EarlyStopping_Patience = 20

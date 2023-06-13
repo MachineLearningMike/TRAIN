@@ -397,9 +397,13 @@ def divide_to_multiple_csv_files(data, time_x, time_y, times, sample_anchors, na
                     x = np.concatenate((x, x_time))
                 f.write(",".join([str(col) for col in x]))
                 y = np.reshape(data[anchor + nx: anchor + nx + ny][:, y_indices[0]][:, :, y_indices[1]], -1)
-                if time_y is True:
+                if time_x is True:
                     assert times is not None
                     y_time = np.reshape(times[anchor + nx: anchor + nx + ny], -1)
+                    if time_y is True:
+                        pass
+                    else:
+                        y_time[:] = 0.0    # This is a placeholder for no-info. Losses and metrics will recognize it.
                     y = np.concatenate((y, y_time))
                 f.write("," + ",".join([str(col) for col in y]))
                 f.write("\n")
@@ -417,7 +421,7 @@ def parse_csv_line_to_tensors(line, nx, size_x, ny, size_y, time_x, time_y, size
         x_time = tf.reshape(fields[nx * size_x: span_x], [nx, -1])
         x = tf.concat([x, x_time], 1)
     y = tf.reshape(fields[span_x : span_x + ny * size_y], [-1])
-    if time_y:
+    if time_x:  # not time_y
         y_time = tf.reshape(fields[span_x + ny * size_y : span_x + span_y], [-1])
         y = tf.concat([y, y_time], 0)
     return x, y
@@ -434,7 +438,7 @@ def parse_csv_line_to_tensors_for_transformer(line, nx, size_x, ny, size_y, time
         x_time = tf.reshape(fields[nx * size_x: span_x], [nx, -1])
         x = tf.concat([x, x_time], 1)
     y = tf.reshape(fields[span_x : span_x + ny * size_y], [ny, -1])
-    if time_y:
+    if time_x:  # not time_y
         y_time = tf.reshape(fields[span_x + ny * size_y : span_x + span_y], [ny, -1])
         y = tf.concat([y, y_time], 1)
 
@@ -506,7 +510,7 @@ def get_datasets(
 
     dx = size_x + (size_time if Time_into_X else 0)
     if Transformer: dx = dx + dx % 2
-    dy = size_y + (size_time if Time_into_Y else 0)
+    dy = size_y + (size_time if Time_into_X else 0)     # not Time_into_Y here.
     if Transformer: dy = dy + dy % 2
     if Transformer: assert dx == dy
 
