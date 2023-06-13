@@ -513,17 +513,6 @@ def get_datasets(
     return Dataset_train, Dataset_valid, dx, dy
 
 
-
-
-    candle_input_x = keras.Input( shape=( (None, dx) ), name='candle_input_x' )
-    candle_input_y = keras.Input( shape=( (None, dx) ), name='candle_input_y' )
-    candle_input_shifted_y = keras.Input( shape=( (None, dx) ), name='candle_input_shifted_y' )
-
-    cryptoformer_input = (candle_input_x, candle_input_y)
-    cryptoformer_output = cryptoformer(cryptoformer_input)
-
-
-
 def build_model(
     dx, dy, Num_Layers, Num_Heads, Factor_FF, repComplexity, Dropout_Rate,
     HuberThreshold, CancleLossWeight, TrendLossWeight
