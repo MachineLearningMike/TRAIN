@@ -2,14 +2,17 @@ import os
 import tensorflow as tf
 
 dir_data = "/mnt/data/Trading/"
+_, fileName = os.path.split(__file__)
+file_number = number = int("".join(filter(str.isdigit, fileName)))
 
 #===================================================================== Dataset
 dataset_id = 57
+assert file_number // 100 // 100 == dataset_id
 Dataset_Id = dataset_id
 
-Nx = 600 # ------------- test
+Nx = 600
 Ny = 5
-Ns = 5 #--------------------- test
+Ns = 5
 BatchSize = 64
 
 CandleFile = "18-01-01-00-00-23-05-20-20-23-5m"
@@ -44,6 +47,7 @@ eFreeNoPlot = True
 
 #======================================================================== Model
 model_id = 2
+assert (file_number // 100) % 100 == model_id
 Model_Id = 100 * Dataset_Id + model_id
 
 Num_Layers = 12 # Wow
@@ -59,6 +63,7 @@ csvLogger_filepath = os.path.join(dir_CSVLogs, "model_{}".format(Model_Id))
 
 #======================================================================== Train
 train_id = 1
+assert file_number % 100 == train_id
 Train_Id = 100 * Model_Id + train_id
 
 Epochs_Initial = 5000
