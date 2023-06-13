@@ -59,4 +59,4 @@ Checkpoint_Monitor = "val_loss"
 EarlyStopping_Min_Monitor = "val_loss"
 EarlyStopping_Patience = 20
 
-Learning_Rate = 0.005
+Learning_Rate = 0.001
