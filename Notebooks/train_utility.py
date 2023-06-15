@@ -11,7 +11,7 @@ from sklearn.model_selection import train_test_split
 # from matplotlib import pyplot as plt
 import matplotlib.pyplot as plt
 
-from trans import *
+from test_trans import *
 
 def ShowSingle(title, series):
     fig = plt.figure(figsize=(16,3))
@@ -49,14 +49,14 @@ def Get_Event_Free_Data_Scheme_10(candles, smallSigma, largeSigma, nLatest):
 
     smallSigma = min(math.floor(candles.shape[0]/3), smallSigma)
     smallP = 3 * smallSigma
-    smallKernel = np.fromiter( (gaussian( x , smallSigma ) for x in range(-smallP+1, 1, 1 ) ), float ) # smallP points, incl 0.
+    smallKernel = np.fromiter( (gaussian( x , smallSigma ) for x in range(-smallP+1, 1, 1 ) ), candles.dtype ) # smallP points, incl 0.
 #     print("smallKernel: {}".format(smallKernel))
     maP = np.convolve(candles[:,3], smallKernel, mode="valid") / np.sum(smallKernel) # maps to candles[smallP-1:]
     log_maP = np.log2(maP + 1e-9) # maps to candles[smallP-1:]
 
     largeSigma = min(math.floor(candles.shape[0]/3), largeSigma)
     largeP = 3 * largeSigma
-    largeKernel = np.fromiter( (gaussian( x , largeSigma ) for x in range(-largeP+1, 1, 1 ) ), float ) # largeP points, incl 0.
+    largeKernel = np.fromiter( (gaussian( x , largeSigma ) for x in range(-largeP+1, 1, 1 ) ), candles.dtype ) # largeP points, incl 0.
 #     print("largeKernel: {}".format(largeKernel))
     event = np.convolve(log_maP, largeKernel, mode="valid") / np.sum(largeKernel) # maps to log_maP[largeP-1:], so to candles[smallP+largeP-2:]
 
@@ -120,13 +120,13 @@ def Show_Price_Volume_10(candles, pSigma, vSigma, nLatest):
 
     pSigma = min(math.floor(candles.shape[0]/3), pSigma)
     pP = 3 * pSigma
-    pKernel = np.fromiter( (gaussian( x , pSigma ) for x in range(-pP+1, 1, 1 ) ), float ) # pP points, incl 0.
+    pKernel = np.fromiter( (gaussian( x , pSigma ) for x in range(-pP+1, 1, 1 ) ), candles.dtype ) # pP points, incl 0.
     # print("pKernel: {}".format(pKernel))
     maP = np.convolve(candles[:, 3], pKernel, mode="valid") / np.sum(pKernel) # maps to candles[smallP-1:]
 
     vSigma = min(math.floor(candles.shape[0]/3), vSigma)
     vP = 3 * vSigma
-    vKernel = np.fromiter( (gaussian( x , vSigma ) for x in range(-vP+1, 1, 1 ) ), float ) # vP points, incl 0.
+    vKernel = np.fromiter( (gaussian( x , vSigma ) for x in range(-vP+1, 1, 1 ) ), candles.dtype ) # vP points, incl 0.
     # print("vKernel: {}".format(vKernel))
     maV = np.convolve(candles[:, 4], vKernel, mode="valid") / np.sum(vKernel) # maps to log_maP[vP-1:], so to candles[pP+vP-2:]
     maQV = np.convolve(candles[:, 5], vKernel, mode="valid") / np.sum(vKernel)
@@ -188,10 +188,19 @@ def get_timestamps(CandleFile, Candles):
     start_ts = round(datetime.timestamp(start))
     interval = CandleFile[ CandleFile.find('-', len(CandleFile) - 4) + 1 : ]
     interval_s = round(intervalToMilliseconds(interval) / 1000)
-    timestamps_abs = np.array( range(start_ts, start_ts + Candles.shape[0] * interval_s, interval_s), dtype=int)
+    timestamps_abs = np.array( range(start_ts, start_ts + Candles.shape[0] * interval_s, interval_s), dtype=np.int64) # must be 64.
     assert timestamps_abs.shape[0] == Candles.shape[0]
     return start_ts, interval_s, timestamps_abs
 
+
+def get_timestamps_2(CandleFile, nCandles):
+    start = datetime( 2000+int(CandleFile[0:2]), int(CandleFile[3:5]), int(CandleFile[6:8]), int(CandleFile[9:11]), int(CandleFile[12:14]) )
+    start_ts = round(datetime.timestamp(start))
+    interval = CandleFile[ CandleFile.find('-', len(CandleFile) - 4) + 1 : ]
+    interval_s = round(intervalToMilliseconds(interval) / 1000)
+    timestamps_abs = np.array( range(start_ts, start_ts + nCandles * interval_s, interval_s), dtype=np.int64) # must be 64
+    assert timestamps_abs.shape[0] == nCandles
+    return start_ts, interval_s, timestamps_abs
 
 #==================== Define 'Get_eFree' ====================
 
@@ -201,7 +210,7 @@ def Get_eFree(feature, smallSigma, largeSigma, nLatest):
 
     smallSigma = min(math.floor(feature.shape[0]/3), smallSigma)
     smallP = 3 * smallSigma
-    smallKernel = np.fromiter( (gaussian( x , smallSigma ) for x in range(-smallP+1, 1, 1 ) ), float ) # smallP points, incl 0.
+    smallKernel = np.fromiter( (gaussian( x , smallSigma ) for x in range(-smallP+1, 1, 1 ) ), feature.dtype ) # smallP points, incl 0.
 #     print("smallKernel: {}".format(smallKernel))
     maP = np.convolve(feature, smallKernel, mode="valid") / np.sum(smallKernel) # maps to feature[smallP-1:]
 
@@ -214,7 +223,7 @@ def Get_eFree(feature, smallSigma, largeSigma, nLatest):
 
     largeSigma = min(math.floor(feature.shape[0]/3), largeSigma)
     largeP = 3 * largeSigma
-    largeKernel = np.fromiter( (gaussian( x , largeSigma ) for x in range(-largeP+1, 1, 1 ) ), float ) # largeP points, incl 0.
+    largeKernel = np.fromiter( (gaussian( x , largeSigma ) for x in range(-largeP+1, 1, 1 ) ), feature.dtype ) # largeP points, incl 0.
 #     print("largeKernel: {}".format(largeKernel))
     event = np.convolve(log_maP, largeKernel, mode="valid") / np.sum(largeKernel) # maps to log_maP[largeP-1:], so to feature[smallP+largeP-2:]
 
@@ -249,13 +258,13 @@ def Get_eFree_noLog(feature, smallSigma, largeSigma, nLatest):
 
     smallSigma = min(math.floor(feature.shape[0]/3), smallSigma)
     smallP = 3 * smallSigma
-    smallKernel = np.fromiter( (gaussian( x , smallSigma ) for x in range(-smallP+1, 1, 1 ) ), float ) # smallP points, incl 0.
+    smallKernel = np.fromiter( (gaussian( x , smallSigma ) for x in range(-smallP+1, 1, 1 ) ), feature.dtype ) # smallP points, incl 0.
 #     print("smallKernel: {}".format(smallKernel))
     maP = np.convolve(feature, smallKernel, mode="valid") / np.sum(smallKernel) # maps to feature[smallP-1:]
 
     largeSigma = min(math.floor(feature.shape[0]/3), largeSigma)
     largeP = 3 * largeSigma
-    largeKernel = np.fromiter( (gaussian( x , largeSigma ) for x in range(-largeP+1, 1, 1 ) ), float ) # largeP points, incl 0.
+    largeKernel = np.fromiter( (gaussian( x , largeSigma ) for x in range(-largeP+1, 1, 1 ) ), feature.dtype ) # largeP points, incl 0.
 #     print("largeKernel: {}".format(largeKernel))
     event = np.convolve(maP, largeKernel, mode="valid") / np.sum(largeKernel) # maps to maP[largeP-1:], so to feature[smallP+largeP-2:]
 
@@ -334,6 +343,52 @@ def get_formation_params(
     return x_indices, y_indices, chosen_markets, chosen_fields
 
 
+def get_formation_params_2(
+        enFields, markets, marketrank,
+        min_true_candle_percent_x, chosen_fields_x_names, min_true_candle_percent_y, chosen_fields_y_names
+    ):
+    chosen_markets_names_x = [ elem[0] for elem in marketrank if elem[1] >= min_true_candle_percent_x ]
+    chosen_markets_x = tuple([ markets.index(elem) for elem in chosen_markets_names_x ])
+    chosen_markets_x = tuple(list(set(chosen_markets_x)))
+
+    chosen_fields_x = tuple( [ enFields.index(elem) for elem in chosen_fields_x_names ] )
+    chosen_fields_x = tuple(list(set(chosen_fields_x)))
+
+    chosen_markets_names_y = [ elem[0] for elem in marketrank if elem[1] >= min_true_candle_percent_y ]
+    chosen_markets_y = tuple([ markets.index(elem) for elem in chosen_markets_names_y ])
+    chosen_markets_y = tuple(list(set(chosen_markets_y)))
+
+    chosen_fields_y = tuple( [ enFields.index(elem) for elem in chosen_fields_y_names ] )
+    chosen_fields_y = tuple(list(set(chosen_fields_y)))
+    y_indices = ( chosen_markets_y, chosen_fields_y )
+
+    chosen_markets = tuple(list(set(chosen_markets_x + chosen_markets_y)))
+    chosen_fields = tuple(list(set(chosen_fields_x + chosen_fields_y)))
+
+    return chosen_markets_names_x, chosen_markets_names_y, chosen_markets, chosen_fields
+
+
+def get_formation_params_3(
+        enFields, markets, 
+        chosen_markets_names_x, chosen_fields_x_names, 
+        chosen_markets_names_y, chosen_fields_y_names
+    ):
+    chosen_markets_x = tuple([ markets.index(elem) for elem in chosen_markets_names_x ])
+    chosen_markets_x = tuple(list(set(chosen_markets_x)))
+
+    chosen_fields_x = tuple( [ enFields.index(elem) for elem in chosen_fields_x_names ] )
+    chosen_fields_x = tuple(list(set(chosen_fields_x)))
+    x_indices = ( chosen_markets_x, chosen_fields_x )
+
+    chosen_markets_y = tuple([ markets.index(elem) for elem in chosen_markets_names_y ])
+    chosen_markets_y = tuple(list(set(chosen_markets_y)))
+
+    chosen_fields_y = tuple( [ enFields.index(elem) for elem in chosen_fields_y_names ] )
+    chosen_fields_y = tuple(list(set(chosen_fields_y)))
+    y_indices = ( chosen_markets_y, chosen_fields_y )
+
+    return x_indices, y_indices
+
 def get_time_features(timestamps_abs):
     sigma = np.power(2.0, -0.2)
     hourly = np.sin( 2 * np.pi / (60*60) * timestamps_abs ) / sigma
@@ -360,6 +415,22 @@ def standardize(Data, chosen_markets, chosen_fields):
     return Data, Standard
 
 
+def standardize_2(Candles):
+    Standard = []
+
+    for market in range(Candles.shape[1]):
+        for field in range(Candles.shape[2]):
+            nzPs = np.where( Candles[:, market, field] != 0.0 ) [0]
+            mu = np.average(Candles[nzPs, market, field])
+            sigma = np.std(Candles[nzPs, market, field])
+            standardized = (Candles[nzPs, market, field] - mu) / (sigma + 1e-15)
+            Standard.append( (market, field, mu, sigma) )
+            assert standardized.dtype == Candles.dtype
+            Candles[nzPs, market, field] = standardized
+    Standard = np.array(Standard)
+    return Candles, Standard
+
+
 def get_sample_anchores(Data, Nx, Ny, Ns):
     sample_anchors = np.array(range(0, Data.shape[0] - Nx - Ny + 1, Ns))
     # print(Data.shape[0], len(sample_anchors), sample_anchors, sample_anchors[-1])
@@ -373,6 +444,19 @@ def get_sample_anchores(Data, Nx, Ny, Ns):
 
     sample_anchores_t = tuple(sample_anchores_t)
     sample_anchores_v = tuple(sample_anchores_v)
+
+    return sample_anchores_t, sample_anchores_v
+
+def get_sample_anchors_2(Data, Nx, Ny, Ns):
+    sample_anchors = np.array(range(0, Data.shape[0] - Nx - Ny + 1, Ns), dtype=np.int32)
+    # print(Data.shape[0], len(sample_anchors), sample_anchors, sample_anchors[-1])
+    # print(Data.shape[0], sample_anchors[ -1 ], sample_anchors[ -1 ] + Nx + Ny, sample_anchors[ -1 ] + Ns, sample_anchors[ -1 ] + Ns + Nx + Ny)
+
+    for _ in range(100):
+        permute = np.random.permutation(sample_anchors.shape[0])
+        sample_anchors = sample_anchors[permute]
+
+    sample_anchores_t, sample_anchores_v = train_test_split(sample_anchors, test_size=0.30, random_state=42)
 
     return sample_anchores_t, sample_anchores_v
 
@@ -413,7 +497,7 @@ def divide_to_multiple_csv_files(data, time_x, time_y, times, sample_anchors, na
 
 def parse_csv_line_to_tensors(line, nx, size_x, ny, size_y, time_x, time_y, size_time):
     span_x = nx * (size_x + (size_time if time_x else 0))
-    span_y = ny * (size_y + (size_time if time_y else 0))
+    span_y = ny * (size_y + (size_time if time_x else 0))   # not time_y
     defs = [tf.constant(0.0)] * (span_x + span_y)
     fields = tf.io.decode_csv(line, record_defaults=defs)
     x = tf.reshape(fields[0: nx * size_x], [nx, -1])    # sequence of nx tokens, each of size_x
@@ -430,7 +514,7 @@ def parse_csv_line_to_tensors(line, nx, size_x, ny, size_y, time_x, time_y, size
 
 def parse_csv_line_to_tensors_for_transformer(line, nx, size_x, ny, size_y, time_x, time_y, size_time):
     span_x = nx * (size_x + (size_time if time_x else 0))
-    span_y = ny * (size_y + (size_time if time_y else 0))
+    span_y = ny * (size_y + (size_time if time_x else 0))   # not time_y
     defs = [tf.constant(0.0)] * (span_x + span_y)
     fields = tf.io.decode_csv(line, record_defaults=defs)
     x = tf.reshape(fields[0: nx * size_x], [nx, -1])    # sequence of nx tokens, each of size_x
@@ -458,17 +542,30 @@ def parse_csv_line_to_tensors_for_transformer(line, nx, size_x, ny, size_y, time
 def csv_reader_to_dataset(filenames, nx, size_x, ny, size_y, time_x, time_y, size_time, n_parse_threads=5, batch_size=32, shuffle_buffer_size=32*128, n_readers=5, transformer=False):
     dataset = tf.data.Dataset.list_files(filenames)
     # dataset = dataset.repeat()
-    dataset = dataset.interleave(
-        lambda filename: tf.data.TextLineDataset(filename), #.skip(1), as we have no headers.
-        cycle_length=n_readers)
-    dataset = dataset.shuffle(shuffle_buffer_size)          # Shuffle before batch
-    if transformer:
-        dataset = dataset.map(lambda x: parse_csv_line_to_tensors_for_transformer(x, nx, size_x, ny, size_y, time_x, time_y, size_time), num_parallel_calls=n_parse_threads)
-    else:
-        dataset = dataset.map(lambda x: parse_csv_line_to_tensors(x, nx, size_x, ny, size_y, time_x, time_y, size_time), num_parallel_calls=n_parse_threads)
-    dataset = dataset.batch(batch_size, drop_remainder=False)   # Batch the shuffled
-    # dataset = dataset.shuffle(10)          # Shuffle again over batches.
-    return dataset #.prefetch(3)
+    dataset = dataset \
+        .interleave(
+            lambda filename: tf.data.TextLineDataset(filename), #.skip(1), as we have no headers.
+            num_parallel_calls=tf.data.AUTOTUNE,    # num_parallel_calls
+            cycle_length=n_readers
+        ) \
+        .prefetch(tf.data.AUTOTUNE) \
+        .cache() \
+        .shuffle(shuffle_buffer_size) \
+
+    mapFun = parse_csv_line_to_tensors_for_transformer if transformer else parse_csv_line_to_tensors
+
+    # shuffle before batch, batch before map
+
+    dataset = dataset \
+        .map(
+            lambda x: mapFun(x, nx, size_x, ny, size_y, time_x, time_y, size_time),
+            num_parallel_calls=tf.data.AUTOTUNE,    # num_parallel_calls
+        ) \
+        .batch(batch_size, drop_remainder=False) \
+        .prefetch(tf.data.AUTOTUNE) \
+        .cache()
+
+    return dataset
 
 
 def get_datasets(
@@ -502,11 +599,11 @@ def get_datasets(
     # sample_anchores are already shuffled. But we need to shuffle datasets again, because it will reshuffle at every epoch.
     Dataset_train = csv_reader_to_dataset(filenames_train, Nx, size_x, Ny, size_y, Time_into_X, Time_into_Y, size_time,
                                 n_parse_threads=5, batch_size=BatchSize, shuffle_buffer_size=BatchSize*shuffle_batch, n_readers=n_readers, transformer=Transformer)
-    Dataset_train = Dataset_train.prefetch(nPrefetch)
+    # Dataset_train = Dataset_train.prefetch(nPrefetch)
 
     Dataset_valid = csv_reader_to_dataset(filenames_valid, Nx, size_x, Ny, size_y, Time_into_X, Time_into_Y, size_time,
                                 n_parse_threads=5, batch_size=BatchSize, shuffle_buffer_size=BatchSize*shuffle_batch, n_readers=n_readers, transformer=Transformer)
-    Dataset_valid = Dataset_valid.prefetch(nPrefetch)
+    # Dataset_valid = Dataset_valid.prefetch(nPrefetch)
 
     dx = size_x + (size_time if Time_into_X else 0)
     if Transformer: dx = dx + dx % 2
@@ -515,6 +612,227 @@ def get_datasets(
     if Transformer: assert dx == dy
 
     return Dataset_train, Dataset_valid, dx, dy
+
+
+class CandleDataset(tf.data.Dataset):
+    def _generator(candles, nx, ny, time_into_x, x_indices, time_into_y, y_indices, times, sample_anchores):
+
+        for anchor in sample_anchores:
+            
+            x = np.reshape(candles[anchor: anchor + nx][:, x_indices[0]][:, :, x_indices[1]], (nx, -1))
+            if time_into_x is True:
+                assert times is not None
+                x_time = np.reshape(times[anchor: anchor + nx], (nx, -1))
+                x = np.concatenate((x, x_time), axis=1)
+           
+            y = np.reshape(candles[anchor + nx: anchor + nx + ny][:, y_indices[0]][:, :, y_indices[1]], (ny, -1))
+            if time_into_x is True:
+                assert times is not None
+                y_time = np.reshape(times[anchor + nx: anchor + nx + ny], (ny, -1))
+                if time_into_y is True:
+                    pass
+                else:
+                    y_time[:] = 0.0    # This is a placeholder for no-info. Losses and metrics will recognize it.
+                y = np.concatenate((y, y_time), axis=1)
+
+            x = tf.pad(x, [[1,1], [0,0]], constant_values=0)   # (1 pre-pad: Start, 1 post-pad: End) on axis 0. (0 pre-pad, 0 post-pad) on axis 1.
+            y = tf.pad(y, [[1,1], [0,0]], constant_values=0)
+
+            if x.shape[-1] % 2 != 0:
+                x = tf.pad(x, [[0,0], [0,1]], constant_values=0) # (0 pre-pad: Start, 0 post-pad: End) on axis 0. (0 pre-pad, 1 post-pad) on axis 1.
+                y = tf.pad(y, [[0,0], [0,1]], constant_values=0)
+
+            yield ( ( tf.convert_to_tensor(x), tf.convert_to_tensor(y[:-1]) ), tf.convert_to_tensor(y[1:]) )
+            # so M(x, [y[0]]) -> y[1], M(x, [y[0], y[1]]) -> y[2], ..., M(x, [y[0], ..., y[-2]]) -> y[-1]
+            # where y[0] = Start, y[-1] = End.
+
+    def get_timepoint_size(cls, indices):
+        size = 1
+        for ids in indices:
+            size *= len(ids)
+        return size
+
+    def __new__(
+            cls, 
+            candles, time_into_x, time_into_y, times, sample_anchores,
+            nx, x_indices, ny, y_indices, size_time
+        ):
+        sixe_x = get_timepoint_size(x_indices) + (size_time if time_into_x else 0)
+        size_y = get_timepoint_size(y_indices) + (size_time if time_into_x else 0) # time_into_x
+        
+        return tf.data.Dataset.from_generator(
+                cls._generator,
+                output_signature = (
+                    (
+                        tf.TensorSpec(shape = (nx, sixe_x), dtype = candles.dtype),
+                        tf.TensorSpec(shape = (ny, size_y), dtype = candles.dtype),
+                    ),
+                    tf.TensorSpec(shape = (ny, size_y), dtype = candles.dtype)
+                ),
+                args=(candles, nx, ny, time_into_x, x_indices, time_into_y, y_indices, times, sample_anchores)
+        )
+
+def anchor_to_sample_org(
+    candles, nx, ny, anchor, x_indices, time_into_x, y_indices, time_into_y, times
+):
+    anchor = anchor.numpy()
+    
+    x = np.reshape(candles[anchor: anchor + nx][:, x_indices[0]][:, :, x_indices[1]], (nx, -1))
+    # x = tf.reshape(candles[anchor: anchor + nx][:, x_indices[0]][:, :, x_indices[1]], (nx, -1))
+    if time_into_x is True:
+        assert times is not None
+        x_time = np.reshape(times[anchor: anchor + nx], (nx, -1))
+        # x_time = tf.reshape(times[anchor: anchor + nx], (nx, -1))
+        x = np.concatenate((x, x_time), axis=1)
+        # x = tf.concat((x, x_time), axis=1)
+
+    y = np.reshape(candles[anchor + nx: anchor + nx + ny][:, y_indices[0]][:, :, y_indices[1]], (ny, -1))
+    # y = tf.reshape(candles[anchor + nx: anchor + nx + ny][:, y_indices[0]][:, :, y_indices[1]], (ny, -1))
+    if time_into_x is True:
+        assert times is not None
+        y_time = np.reshape(times[anchor + nx: anchor + nx + ny], (ny, -1))
+        # y_time = tf.reshape(times[anchor + nx: anchor + nx + ny], (ny, -1))
+
+        if time_into_y is True:
+            pass
+        else:
+            y_time[:] = 0.0
+            # y_time = tf.zeros_like(y_time)    # This is a placeholder for no-info. Losses and metrics will recognize it.
+        y = np.concatenate((y, y_time), axis=1)
+        # y = tf.concat((y, y_time), axis=1)
+
+    x = np.pad(x, [[1,1], [0,0]], constant_values=0)   # (1 pre-pad: Start, 1 post-pad: End) on axis 0. (0 pre-pad, 0 post-pad) on axis 1.
+    # x = tf.pad(x, [[1,1], [0,0]], constant_values=0)   # (1 pre-pad: Start, 1 post-pad: End) on axis 0. (0 pre-pad, 0 post-pad) on axis 1.
+    y = np.pad(y, [[1,1], [0,0]], constant_values=0)
+    # y = tf.pad(y, [[1,1], [0,0]], constant_values=0)
+
+    if x.shape[-1] % 2 != 0:
+        x = np.pad(x, [[0,0], [0,1]], constant_values=0) # (0 pre-pad: Start, 0 post-pad: End) on axis 0. (0 pre-pad, 1 post-pad) on axis 1.
+        # x = tf.pad(x, [[0,0], [0,1]], constant_values=0) # (0 pre-pad: Start, 0 post-pad: End) on axis 0. (0 pre-pad, 1 post-pad) on axis 1.
+        y = np.pad(y, [[0,0], [0,1]], constant_values=0)
+        # y = tf.pad(y, [[0,0], [0,1]], constant_values=0)
+
+    return (x, y[:-1], y[1:])
+    # so M(x, [y[0]]) -> y[1], M(x, [y[0], y[1]]) -> y[2], ..., M(x, [y[0], ..., y[-2]]) -> y[-1]
+    # where y[0] = Start, y[-1] = End.
+
+
+def get_datasets_2(
+    Candles, Time_into_X, Time_into_Y, Times, 
+    sample_anchores_t, sample_anchores_v,
+    Nx, x_indices, Ny, y_indices, size_time,
+    BatchSize, shuffle_batch, shuffle=True
+):
+    
+    size_x = get_timepoint_size(x_indices)
+    size_y = get_timepoint_size(y_indices) # time_into_x
+
+    dx = size_x + (size_time if Time_into_X else 0)
+    dx = dx + dx % 2
+    dy = size_y + (size_time if Time_into_X else 0)     # not Time_into_Y
+    dy = dy + dy % 2
+    assert dx == dy
+
+
+    def anchor_to_sample(anchor):
+
+        # return  np.ones(shape=(Nx+2,dx), dtype=Candles.dtype), \
+        #         np.ones(shape=(Ny+1,dx), dtype=Candles.dtype), \
+        #         np.ones(shape=(Ny+1,dx), dtype=Candles.dtype)
+
+        # anchor = anchor.numpy() 
+        # # commented out, because this fun is already called as a numpy_function, and all are evaluated to a numpy thing.
+        
+        x = np.reshape(Candles[anchor: anchor + Nx][:, x_indices[0]][:, :, x_indices[1]], (Nx, -1))
+        # x = tf.reshape(candles[anchor: anchor + nx][:, x_indices[0]][:, :, x_indices[1]], (nx, -1))
+        if Time_into_X is True:
+            assert Times is not None
+            x_time = np.reshape(Times[anchor: anchor + Nx], (Nx, -1))
+            # x_time = tf.reshape(times[anchor: anchor + nx], (nx, -1))
+            x = np.concatenate((x, x_time), axis=1)
+            # x = tf.concat((x, x_time), axis=1)
+
+        y = np.reshape(Candles[anchor + Nx: anchor + Nx + Ny][:, y_indices[0]][:, :, y_indices[1]], (Ny, -1))
+        # y = tf.reshape(candles[anchor + nx: anchor + nx + ny][:, y_indices[0]][:, :, y_indices[1]], (ny, -1))
+        if Time_into_X is True:
+            assert Times is not None
+            y_time = np.reshape(Times[anchor + Nx: anchor + Nx + Ny], (Ny, -1))
+            # y_time = tf.reshape(times[anchor + nx: anchor + nx + ny], (ny, -1))
+            if Time_into_Y is True:
+                pass
+            else:
+                y_time[:] = 0.0
+                # y_time = tf.zeros_like(y_time)    # This is a placeholder for no-info. Losses and metrics will recognize it.
+            y = np.concatenate((y, y_time), axis=1)
+            # y = tf.concat((y, y_time), axis=1)
+
+        x = np.pad(x, [[1,1], [0,0]], constant_values=0)   # (1 pre-pad: Start, 1 post-pad: End) on axis 0. (0 pre-pad, 0 post-pad) on axis 1.
+        # x = tf.pad(x, [[1,1], [0,0]], constant_values=0)   # (1 pre-pad: Start, 1 post-pad: End) on axis 0. (0 pre-pad, 0 post-pad) on axis 1.
+        y = np.pad(y, [[1,1], [0,0]], constant_values=0)
+        # y = tf.pad(y, [[1,1], [0,0]], constant_values=0)
+
+        if x.shape[-1] % 2 != 0:
+            x = np.pad(x, [[0,0], [0,1]], constant_values=0) # (0 pre-pad: Start, 0 post-pad: End) on axis 0. (0 pre-pad, 1 post-pad) on axis 1.
+            # x = tf.pad(x, [[0,0], [0,1]], constant_values=0) # (0 pre-pad: Start, 0 post-pad: End) on axis 0. (0 pre-pad, 1 post-pad) on axis 1.
+            y = np.pad(y, [[0,0], [0,1]], constant_values=0)
+            # y = tf.pad(y, [[0,0], [0,1]], constant_values=0)
+
+        return x, y[:-1], y[1:]
+        # so M(x, [y[0]]) -> y[1], M(x, [y[0], y[1]]) -> y[2], ..., M(x, [y[0], ..., y[-2]]) -> y[-1]
+        # where y[0] = Start, y[-1] = End.
+
+
+    def refine_dataset(sample_anchores):
+        dataset = tf.data.Dataset.from_tensor_slices(sample_anchores)
+        dataset = dataset.map(
+            lambda anchor: tf.numpy_function(
+                # All are evaluated to numpy things. E.g. anchor is evaluated to numpy.
+                anchor_to_sample,
+                inp = [anchor],
+                Tout = [Candles.dtype, Candles.dtype, Candles.dtype]
+            ),
+            num_parallel_calls=tf.data.AUTOTUNE
+        ) \
+        .map(lambda x, y, z: ((x, y), z))
+
+        if shuffle is True:
+            dataset = dataset.shuffle(BatchSize * shuffle_batch)
+        
+        dataset = dataset.batch(BatchSize, drop_remainder=False) \
+        .prefetch(tf.data.AUTOTUNE)
+
+        # .cache()
+
+        # lambda anchor: 
+        # tf.numpy_function(
+        #     anchor_to_sample,
+        #     inp = [Candles, Nx, Ny, anchor, x_indices, Time_into_X, y_indices, Time_into_Y, Times],
+        #     Tout = [Candles.dtype, Candles.dtype, Candles.dtype])
+            # Tout= [
+            #     tf.TensorSpec(shape=[Nx, dx], dtype=Candles.dtype), 
+            #     tf.TensorSpec(shape=[Ny, dy], dtype=Candles.dtype),
+            #     tf.TensorSpec(shape=[Ny, dy], dtype=Candles.dtype)
+            # ]
+        # lambda anchor: anchor_to_sample(
+        #     Candles, Nx, Ny, int(anchor), x_indices, Time_into_X, y_indices, Time_into_Y, Times
+        # ),
+        # num_parallel_calls=tf.data.AUTOTUNE
+
+        # ds_valid = CandleDataset(
+        #     Candles, Time_into_X, Time_into_Y, Times, sample_anchores_v,
+        #     Nx, x_indices, Ny, y_indices, size_time
+        # ) \
+        # .shuffle(BatchSize * shuffle_batch) \
+        # .batch(BatchSize, drop_remainder=False) \
+        # .prefetch(tf.data.AUTOTUNE) \
+        # .cache()
+
+        return dataset
+
+    ds_train = refine_dataset(sample_anchores_t)
+    ds_valid = refine_dataset(sample_anchores_v)
+
+    return ds_train, ds_valid, dx, dy
 
 
 def build_model(
@@ -569,7 +887,7 @@ def build_model(
 
 def build_model_2(
     dx, dy, Num_Layers, Num_Heads, Factor_FF, repComplexity, Dropout_Rate,
-    HuberThreshold, CancleLossWeight, TrendLossWeight, Learning_Rate
+    HuberThreshold, Optimizer, Learning_Rate
     ):
 
     assert dx == dy
@@ -596,7 +914,7 @@ def build_model_2(
     model.compile(
         optimizer=tf.keras.optimizers.Adam(
             Learning_Rate, # learning_rate, # default is 0.001. 
-            beta_1=0.9, 
+            beta_1=0.9,
             beta_2=0.98, 
             epsilon=1e-9
         ),
@@ -852,13 +1170,13 @@ def plot_csv_log_history(file_path, columns):
     for col_name in columns:
         if col_name == 'epoch': continue
         plt.plot(range(len(data[col_name])), data[col_name], label=col_name)
-    plt.legend(loc='lower left')
+    plt.legend(loc='center')
     plt.show()
 
 # # Find market clusters # temporary
 # from sklearn.metrics import pairwise
 
-# distances = np.zeros( (Candles.shape[1], Candles.shape[1]), dtype=float)
+# distances = np.zeros( (Candles.shape[1], Candles.shape[1]), dtype=Candles.dtype)
 
 # # Find dependency distance
 # for m in range(Candles.shape[1]):
