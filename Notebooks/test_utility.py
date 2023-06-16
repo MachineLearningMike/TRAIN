@@ -313,14 +313,14 @@ def get_formed_data( Candles, CandleMarks, all_market_names, all_field_names,
         target_market_names, tarket_market_top_percent
     ):
     # marketrank, permute
-    check = np.array([ np.argmax(Candles[:, m, 0]>0) / Candles.shape[0] * 100 for m in range(len(all_market_names)) ])
-    permute = np.argsort(check)
-    all_marketrank = [ (all_market_names[m], 100 - round(np.argmax(Candles[:, m, 0]>0) / Candles.shape[0] * 100)) for m in permute ]
+    nPrepaddedZeros = np.array([ np.argmax(Candles[:, m, 0]>0) for m in range(len(all_market_names)) ])
+    long_history_markets = np.argsort(nPrepaddedZeros)
+    all_marketrank = [ (all_market_names[m], 100 - round(np.argmax(Candles[:, m, 0]>0) / Candles.shape[0] * 100)) for m in long_history_markets ]
 
     # permute all data.
-    all_market_names = [all_market_names[m] for m in permute]
-    Candles = Candles[:, permute]
-    CandleMarks = CandleMarks[:, permute]
+    all_market_names = [all_market_names[m] for m in long_history_markets]
+    Candles = Candles[:, long_history_markets]
+    # CandleMarks = CandleMarks[:, long_history_markets]
 
     # chosen_markets, chosen_fields
     chosen_market_names_x = [ elem[0] for elem in all_marketrank if elem[1] >= min_true_candle_percent_x ]
@@ -367,10 +367,11 @@ def get_formed_data( Candles, CandleMarks, all_market_names, all_field_names,
 
     # Compute target_markets/fields
     if target_market_names is not None:
-        target_market_names = [m for m in target_market_names if m in chosen_market_names]
+        target_market_names = [m for m in chosen_market_names if m in target_market_names]  # to have the same order as in chosen_market_names
         target_markets = tuple([ chosen_market_names.index(elem) for elem in target_market_names ])
     elif tarket_market_top_percent is not None and tarket_market_top_percent > 0:
         target_market_names = chosen_market_names[: int(len(chosen_market_names) * tarket_market_top_percent / 100)]
+        target_market_names = [m for m in chosen_market_names if m in target_market_names] # to have the same order as in chosen_market_names
         target_markets = tuple([ chosen_market_names.index(elem) for elem in target_market_names ])
     else:
         target_market_names = chosen_market_names_y
@@ -821,36 +822,39 @@ def get_datasets_2(
     dy = dy + dy % 2
     assert dx == dy
 
+    non_target_markets_relative = [ y_indices[0].index(i) for i in y_indices[0] if i not in target_markets ]
+    nFeaturesPerMarket = len(y_indices[1])
+    all_ntmr = []
+    for ntmr in non_target_markets_relative:
+        all_ntmr = all_ntmr + list(range(ntmr* nFeaturesPerMarket, (ntmr+1) * nFeaturesPerMarket, 1))
+    non_target_features_relative = tuple(all_ntmr)
 
-    def anchor_to_sample(anchor):
-
+    def anchor_to_sample(anchor): # This function is the bottle-neck of training speed.
         x = np.reshape(Candles[anchor: anchor + Nx][:, x_indices[0]][:, :, x_indices[1]], (Nx, -1))
         if Time_into_X is True:
             assert Times is not None
-            x_time = np.reshape(Times[anchor: anchor + Nx], (Nx, -1))
-            # x_time = tf.reshape(times[anchor: anchor + nx], (nx, -1))
-            x = np.concatenate((x, x_time), axis=1)
-            # x = tf.concat((x, x_time), axis=1)
+            x = np.concatenate((x, np.reshape(Times[anchor: anchor + Nx], (Nx, -1))), axis=1) # concat(x, x_time)
 
         y = np.reshape(Candles[anchor + Nx: anchor + Nx + Ny][:, y_indices[0]][:, :, y_indices[1]], (Ny, -1))
 
         if Time_into_X is True:
             assert Times is not None
             y_time = np.reshape(Times[anchor + Nx: anchor + Nx + Ny], (Ny, -1))
-            if Time_into_Y is True:
-                pass
-            else:
-                y_time[:] = 0.0
+            if Time_into_Y is not True: y_time[:] = 0.0
             y = np.concatenate((y, y_time), axis=1)
 
         x = np.pad(x, [[1,1], [0,0]], constant_values=0)   # (1 pre-pad: Start, 1 post-pad: End) on axis 0. (0 pre-pad, 0 post-pad) on axis 1.
+        z = y
         y = np.pad(y, [[1,1], [0,0]], constant_values=0)
 
         if x.shape[-1] % 2 != 0:
             x = np.pad(x, [[0,0], [0,1]], constant_values=0) # (0 pre-pad: Start, 0 post-pad: End) on axis 0. (0 pre-pad, 1 post-pad) on axis 1.
             y = np.pad(y, [[0,0], [0,1]], constant_values=0)
 
-        return x, y[:-1], y_target[1:]
+        y_target = np.copy(y[1:])
+        y_target[:, non_target_features_relative] = 0.0
+
+        return x, y[:-1], y_target
         # so M(x, [y[0]]) -> y[1], M(x, [y[0], y[1]]) -> y[2], ..., M(x, [y[0], ..., y[-2]]) -> y[-1]
         # where y[0] = Start, y[-1] = End.
 
@@ -872,8 +876,8 @@ def get_datasets_2(
             dataset = dataset.shuffle(BatchSize * shuffle_batch)
         
         dataset = dataset.batch(BatchSize, drop_remainder=False) \
-        .prefetch(tf.data.AUTOTUNE)
-        # .cache()
+        .prefetch(tf.data.AUTOTUNE) \
+        .cache()
 
         # lambda anchor: 
         # tf.numpy_function(
