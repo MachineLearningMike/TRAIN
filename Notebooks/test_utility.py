@@ -310,12 +310,17 @@ def get_timepoint_size(indices):
 
 def get_formed_data( Candles, CandleMarks, all_market_names, all_field_names, 
         min_true_candle_percent_x, chosen_fields_names_x, min_true_candle_percent_y, chosen_fields_names_y,
-        target_market_names=None
+        target_market_names, tarket_market_top_percent
     ):
-    # marketrank
+    # marketrank, permute
     check = np.array([ np.argmax(Candles[:, m, 0]>0) / Candles.shape[0] * 100 for m in range(len(all_market_names)) ])
     permute = np.argsort(check)
     all_marketrank = [ (all_market_names[m], 100 - round(np.argmax(Candles[:, m, 0]>0) / Candles.shape[0] * 100)) for m in permute ]
+
+    # permute all data.
+    all_market_names = [all_market_names[m] for m in permute]
+    Candles = Candles[:, permute]
+    CandleMarks = CandleMarks[:, permute]
 
     # chosen_markets, chosen_fields
     chosen_market_names_x = [ elem[0] for elem in all_marketrank if elem[1] >= min_true_candle_percent_x ]
@@ -364,9 +369,12 @@ def get_formed_data( Candles, CandleMarks, all_market_names, all_field_names,
     if target_market_names is not None:
         target_market_names = [m for m in target_market_names if m in chosen_market_names]
         target_markets = tuple([ chosen_market_names.index(elem) for elem in target_market_names ])
+    elif tarket_market_top_percent is not None and tarket_market_top_percent > 0:
+        target_market_names = chosen_market_names[: int(len(chosen_market_names) * tarket_market_top_percent / 100)]
+        target_markets = tuple([ chosen_market_names.index(elem) for elem in target_market_names ])
     else:
-        target_market_names = None
-        target_markets = ()
+        target_market_names = chosen_market_names_y
+        target_markets = chosen_markets_y
 
     # Check for consistency
     marketrank = [ all_marketrank[i] for i in range(len(all_marketrank)) if all_marketrank[i][0] in chosen_market_names ]
@@ -378,7 +386,7 @@ def get_formed_data( Candles, CandleMarks, all_market_names, all_field_names,
             assert r[0] in chosen_market_names
 
     return \
-        Candles, x_indices, y_indices, \
+        Candles, CandleMarks, all_market_names, x_indices, y_indices, \
         chosen_market_names_x, chosen_field_names_x, chosen_market_names_y, chosen_field_names_y, \
         chosen_market_names, chosen_field_names, \
         target_market_names, target_markets
@@ -480,13 +488,15 @@ def standardize(Data, chosen_markets, chosen_fields):
     Standard = []
 
     for market in chosen_markets:
+        _Standard = []
         for field in chosen_fields:
             nzPs = np.where( Data[:, market, field] != 0.0 ) [0]
             mu = np.average(Data[nzPs, market, field])
             sigma = np.std(Data[nzPs, market, field])
             standard = (Data[nzPs, market, field] - mu) / (sigma + 1e-15)
-            Standard.append( (market, field, mu, sigma) )
+            _Standard.append( (market, field, mu, sigma) )
             Data[nzPs, market, field] = standard
+        Standard.append(_Standard)
     Standard = np.array(Standard)
     return Data, Standard
 
@@ -495,14 +505,16 @@ def standardize_2(Candles):
     Standard = []
 
     for market in range(Candles.shape[1]):
+        subStandard = []
         for field in range(Candles.shape[2]):
             nzPs = np.where( Candles[:, market, field] != 0.0 ) [0]
             mu = np.average(Candles[nzPs, market, field])
             sigma = np.std(Candles[nzPs, market, field])
             standardized = (Candles[nzPs, market, field] - mu) / (sigma + 1e-15)
-            Standard.append( (market, field, mu, sigma) )
+            subStandard.append( (market, field, mu, sigma) )
             assert standardized.dtype == Candles.dtype
             Candles[nzPs, market, field] = standardized
+        Standard.append(subStandard)
     Standard = np.array(Standard)
     return Candles, Standard
 
@@ -796,8 +808,8 @@ def anchor_to_sample_org(
 def get_datasets_2(
     Candles, Time_into_X, Time_into_Y, Times, 
     sample_anchores_t, sample_anchores_v,
-    Nx, x_indices, Ny, y_indices, size_time,
-    BatchSize, shuffle_batch, shuffle=True, target_markets = None,
+    Nx, x_indices, Ny, y_indices, size_time, target_markets,
+    BatchSize, shuffle_batch, shuffle=True
 ):
     
     size_x = get_timepoint_size(x_indices)
@@ -818,9 +830,6 @@ def get_datasets_2(
 
         # anchor = anchor.numpy() 
         # # commented out, because this fun is already called as a numpy_function, and all are evaluated to a numpy thing.
-
-        if target_markets is not None:
-            target_markets = y_indices[0]
 
         x = np.reshape(Candles[anchor: anchor + Nx][:, x_indices[0]][:, :, x_indices[1]], (Nx, -1))
         # x = tf.reshape(candles[anchor: anchor + nx][:, x_indices[0]][:, :, x_indices[1]], (nx, -1))
