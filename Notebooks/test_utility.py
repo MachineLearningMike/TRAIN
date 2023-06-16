@@ -824,15 +824,7 @@ def get_datasets_2(
 
     def anchor_to_sample(anchor):
 
-        # return  np.ones(shape=(Nx+2,dx), dtype=Candles.dtype), \
-        #         np.ones(shape=(Ny+1,dx), dtype=Candles.dtype), \
-        #         np.ones(shape=(Ny+1,dx), dtype=Candles.dtype)
-
-        # anchor = anchor.numpy() 
-        # # commented out, because this fun is already called as a numpy_function, and all are evaluated to a numpy thing.
-
         x = np.reshape(Candles[anchor: anchor + Nx][:, x_indices[0]][:, :, x_indices[1]], (Nx, -1))
-        # x = tf.reshape(candles[anchor: anchor + nx][:, x_indices[0]][:, :, x_indices[1]], (nx, -1))
         if Time_into_X is True:
             assert Times is not None
             x_time = np.reshape(Times[anchor: anchor + Nx], (Nx, -1))
@@ -841,37 +833,22 @@ def get_datasets_2(
             # x = tf.concat((x, x_time), axis=1)
 
         y = np.reshape(Candles[anchor + Nx: anchor + Nx + Ny][:, y_indices[0]][:, :, y_indices[1]], (Ny, -1))
-        y_target = y
-        y_target[:, tuple( [ y_indices[0].index(i) for i in y_indices[0] if i not in target_markets ] ) ] = 0.0
 
-        # y = tf.reshape(candles[anchor + nx: anchor + nx + ny][:, y_indices[0]][:, :, y_indices[1]], (ny, -1))
         if Time_into_X is True:
             assert Times is not None
             y_time = np.reshape(Times[anchor + Nx: anchor + Nx + Ny], (Ny, -1))
-            # y_time = tf.reshape(times[anchor + nx: anchor + nx + ny], (ny, -1))
             if Time_into_Y is True:
                 pass
             else:
                 y_time[:] = 0.0
-                # y_time = tf.zeros_like(y_time)    # This is a placeholder for no-info. Losses and metrics will recognize it.
             y = np.concatenate((y, y_time), axis=1)
-            y_target = np.concatenate((y_target, y_time), axis=1)
-
-            # y = tf.concat((y, y_time), axis=1)
 
         x = np.pad(x, [[1,1], [0,0]], constant_values=0)   # (1 pre-pad: Start, 1 post-pad: End) on axis 0. (0 pre-pad, 0 post-pad) on axis 1.
-        # x = tf.pad(x, [[1,1], [0,0]], constant_values=0)   # (1 pre-pad: Start, 1 post-pad: End) on axis 0. (0 pre-pad, 0 post-pad) on axis 1.
         y = np.pad(y, [[1,1], [0,0]], constant_values=0)
-        y_target = np.pad(y_target, [[1,1], [0,0]], constant_values=0)
-
-        # y = tf.pad(y, [[1,1], [0,0]], constant_values=0)
 
         if x.shape[-1] % 2 != 0:
             x = np.pad(x, [[0,0], [0,1]], constant_values=0) # (0 pre-pad: Start, 0 post-pad: End) on axis 0. (0 pre-pad, 1 post-pad) on axis 1.
-            # x = tf.pad(x, [[0,0], [0,1]], constant_values=0) # (0 pre-pad: Start, 0 post-pad: End) on axis 0. (0 pre-pad, 1 post-pad) on axis 1.
             y = np.pad(y, [[0,0], [0,1]], constant_values=0)
-            y_target = np.pad(y_target, [[0,0], [0,1]], constant_values=0)
-            # y = tf.pad(y, [[0,0], [0,1]], constant_values=0)
 
         return x, y[:-1], y_target[1:]
         # so M(x, [y[0]]) -> y[1], M(x, [y[0], y[1]]) -> y[2], ..., M(x, [y[0], ..., y[-2]]) -> y[-1]
@@ -896,7 +873,6 @@ def get_datasets_2(
         
         dataset = dataset.batch(BatchSize, drop_remainder=False) \
         .prefetch(tf.data.AUTOTUNE)
-
         # .cache()
 
         # lambda anchor: 
